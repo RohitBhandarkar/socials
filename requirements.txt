@@ -1,0 +1,11 @@
+beautifulsoup4
+google-generativeai
+python-dotenv
+rich
+requests
+selenium
+google-api-python-client
+google-auth-oauthlib
+google-auth-httplib2
+pyperclip
+tweepy

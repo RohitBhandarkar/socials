@@ -1,0 +1,92 @@
+import os
+
+BASE_TMP_DIR = "/tmp/"
+
+def get_base_dir() -> str:
+    return BASE_TMP_DIR
+
+def get_browser_data_dir(profile_name: str) -> str:
+    return os.path.join(BASE_TMP_DIR, "browser-data", profile_name)
+
+def get_cache_dir() -> str:
+    return os.path.join(BASE_TMP_DIR, "cache")
+
+def get_downloads_dir() -> str:
+    return os.path.join(BASE_TMP_DIR, "downloads")
+
+def get_eternity_dir(profile_name: str) -> str:
+    return os.path.join(BASE_TMP_DIR, "eternity-x", profile_name)
+
+def get_logs_dir() -> str:
+    return os.path.join(BASE_TMP_DIR, "logs")
+
+def get_pool_dir() -> str:
+    return os.path.join(BASE_TMP_DIR, "pool")
+
+def get_replies_dir(profile_name: str) -> str:
+    return os.path.join(BASE_TMP_DIR, "replies-x", profile_name)
+
+def get_schedule_dir(profile_name: str) -> str:
+    return os.path.join(BASE_TMP_DIR, "schedule", profile_name)
+
+def get_community_dir(profile_name: str) -> str:
+    return os.path.join(BASE_TMP_DIR, "community", profile_name)
+
+def ensure_dir_exists(path: str) -> str:
+    os.makedirs(path, exist_ok=True)
+    return path
+
+def get_schedule_file_path(profile_name: str) -> str:
+    return os.path.join(get_schedule_dir(profile_name), "schedule.json")
+
+def get_eternity_schedule_file_path(profile_name: str) -> str:
+    return os.path.join(get_eternity_dir(profile_name), "schedule.json")
+
+def get_action_schedule_file_path(profile_name: str) -> str:
+    return os.path.join(get_replies_dir(profile_name), "schedule.json")
+
+def get_turbin_schedule_file_path(profile_name: str) -> str:
+    return os.path.join(get_replies_dir(profile_name), "schedule.json")
+
+def get_review_html_path(profile_name: str, mode: str = "action") -> str:
+    if mode == "eternity":
+        return os.path.join(get_eternity_dir(profile_name), "review.html")
+    elif mode == "turbin":
+        return os.path.join(get_replies_dir(profile_name), "review.html")
+    else:
+        return os.path.join(get_replies_dir(profile_name), "review.html")
+
+def get_api_log_file_path() -> str:
+    return os.path.join(get_logs_dir(), "api_calls_log.json")
+
+def get_gemini_log_file_path() -> str:
+    return os.path.join(get_logs_dir(), "gemini_api_calls_log.json")
+
+def get_temp_media_dir(profile_name: str, mode: str = "action") -> str:
+    if mode == "eternity":
+        base_dir = get_eternity_dir(profile_name)
+    elif mode == "turbin":
+        base_dir = get_replies_dir(profile_name)
+    else:
+        base_dir = get_replies_dir(profile_name)
+    
+    temp_dir = os.path.join(base_dir, "_temp_media")
+    return ensure_dir_exists(temp_dir)
+
+def get_schedule2_file_path(profile_name: str) -> str:
+    return os.path.join(get_schedule_dir(profile_name), "schedule2.json")
+
+def get_community_output_file_path(profile_name: str, community_name: str, timestamp: str) -> str:
+    return os.path.join(get_community_dir(profile_name), f"{community_name}_{timestamp}.json")
+
+def initialize_directories() -> None:
+    directories = [
+        get_base_dir(),
+        get_cache_dir(),
+        get_downloads_dir(),
+        get_logs_dir(),
+        get_pool_dir(),
+    ]
+    
+    for directory in directories:
+        ensure_dir_exists(directory)
