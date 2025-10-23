@@ -16,9 +16,9 @@ from services.support.rate_limiter import RateLimiter
 from selenium.webdriver.support.ui import WebDriverWait
 from services.support.image_download import download_images
 from services.support.web_driver_handler import setup_driver
-from services.support.process_container import process_container
 from selenium.webdriver.support import expected_conditions as EC
 from services.support.video_download import download_twitter_videos
+from services.platform.x.support.process_container import process_container
 from services.platform.x.support.post_approved_tweets import post_tweet_reply
 from services.platform.x.support.action_html import build_action_mode_schedule_html
 from services.platform.x.support.generate_reply_with_key import generate_reply_with_key
@@ -547,6 +547,11 @@ def post_approved_action_mode_replies_online(driver, profile_name: str, run_numb
     return {"processed": len(approved_replies_with_indices), "posted": posted, "failed": failed}
 
 def post_approved_action_mode_replies(driver, profile_name: str, verbose: bool = False) -> Dict[str, Any]:
+    service = get_google_sheets_service(verbose=verbose, status=None)
+    if not service:
+        _log("Google Sheets service not available. Cannot post replies.", verbose, is_error=True)
+        return {"processed": 0, "posted": 0, "failed": 0}
+
     schedule_folder = _ensure_action_mode_folder(profile_name)
     schedule_path = os.path.join(schedule_folder, 'schedule.json')
     
@@ -653,6 +658,7 @@ def post_approved_action_mode_replies(driver, profile_name: str, verbose: bool =
             _log(f"Successfully posted reply to {tweet_url}", verbose, is_error=False)
             posted += 1
             tweet_data['status'] = 'posted'
+            save_posted_reply_to_replied_tweets_sheet(service, profile_name, tweet_data, verbose=verbose)
 
         except Exception as e:
             _log(f"Failed to post reply to {tweet_url}: {e}", verbose, is_error=True)

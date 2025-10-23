@@ -17,9 +17,9 @@ from selenium.common.exceptions import TimeoutException
 from selenium.webdriver.support.ui import WebDriverWait
 from services.support.image_download import download_images
 from services.support.web_driver_handler import setup_driver
-from services.support.process_container import process_container
 from selenium.webdriver.support import expected_conditions as EC
 from services.support.video_download import download_twitter_videos
+from services.platform.x.support.process_container import process_container
 from services.platform.x.support.eternity_html import build_eternity_schedule_html
 from services.platform.x.support.generate_reply_with_key import generate_reply_with_key
 from services.support.path_config import get_browser_data_dir, get_eternity_dir, get_eternity_schedule_file_path, ensure_dir_exists

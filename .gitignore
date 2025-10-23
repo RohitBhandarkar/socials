@@ -9,7 +9,7 @@ browser-data
 schedule
 __pycache__
 downloads
-credentials
+service_account.json
 downloaded_videos.txt
 tests
 videos

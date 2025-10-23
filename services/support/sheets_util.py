@@ -8,6 +8,9 @@ from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from typing import List, Dict, Any, Optional, Tuple
 from services.support.api_call_tracker import APICallTracker
+from dotenv import load_dotenv
+
+load_dotenv()
 
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
 SPREADSHEET_ID = os.getenv('SPREADSHEET_ID')

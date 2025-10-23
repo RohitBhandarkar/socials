@@ -9,8 +9,8 @@ from rich.console import Console
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from services.support.web_driver_handler import setup_driver
-from services.support.process_container import process_container
 from selenium.webdriver.support import expected_conditions as EC
+from services.platform.x.support.process_container import process_container
 from services.support.path_config import get_browser_data_dir, get_community_output_file_path
 from services.platform.x.support.capture_containers_scroll import capture_containers_and_scroll
 
