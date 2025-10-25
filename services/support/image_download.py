@@ -5,6 +5,7 @@ import requests
 from datetime import datetime
 from rich.console import Console
 from urllib.parse import urlparse
+from services.support.path_config import get_downloads_dir
 
 console = Console()
 
@@ -22,7 +23,7 @@ def _log(message: str, verbose: bool, is_error: bool = False):
         console.print(f"[image_download.py] {timestamp}|[{color}]{log_message}[/{color}]")
 
 def download_images(image_urls, profile_name="Default", verbose: bool = False):
-    download_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'downloads', 'images', profile_name))
+    download_dir = os.path.abspath(os.path.join(get_downloads_dir(), 'images', profile_name))
     os.makedirs(download_dir, exist_ok=True)
     
     local_image_paths = []

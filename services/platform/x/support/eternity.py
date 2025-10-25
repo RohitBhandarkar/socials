@@ -23,15 +23,18 @@ from services.platform.x.support.process_container import process_container
 from services.platform.x.support.eternity_html import build_eternity_schedule_html
 from services.platform.x.support.generate_reply_with_key import generate_reply_with_key
 from services.support.path_config import get_browser_data_dir, get_eternity_dir, get_eternity_schedule_file_path, ensure_dir_exists
-
+from services.support.sheets_util import get_google_sheets_service, sanitize_sheet_name, get_generated_replies
 
 
 console = Console()
 
 def _log(message: str, verbose: bool, status=None, is_error: bool = False):
-    if verbose or is_error:
-        log_message = message
-        if is_error and not verbose:
+    if status and (is_error or verbose):
+        status.stop()
+
+    log_message = message
+    if is_error:
+        if not verbose:
             match = re.search(r'(\d{3}\s+.*?)(?:\.|\n|$)', message)
             if match:
                 log_message = f"Error: {match.group(1).strip()}"
@@ -40,6 +43,10 @@ def _log(message: str, verbose: bool, status=None, is_error: bool = False):
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         color = "bold red" if is_error else "white"
         console.print(f"[eternity.py] {timestamp}|[{color}]{log_message}[/{color}]")
+    elif verbose:
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        color = "white"
+        console.print(f"[eternity.py] {timestamp}|[{color}]{message}[/{color}]")
     elif status:
         status.update(message)
 
@@ -49,7 +56,7 @@ def _ensure_eternity_folder(profile_name: str) -> str:
     return ensure_dir_exists(base_dir)
 
 
-def _copy_media_into_eternity(media_paths: List[str], eternity_folder: str, verbose: bool = False) -> List[str]:
+def _copy_media_into_eternity(media_paths: List[str], eternity_folder: str, verbose: bool = False, status=None) -> List[str]:
     saved_abs_paths: List[str] = []
     for path in media_paths:
         if not path:
@@ -67,39 +74,41 @@ def _copy_media_into_eternity(media_paths: List[str], eternity_folder: str, verb
             shutil.copy2(path, target_path)
             saved_abs_paths.append(os.path.abspath(target_path))
         except Exception as e:
-            _log(f"Error copying media {path} into eternity folder: {e}", verbose, is_error=True)
+            _log(f"Error copying media {path} into eternity folder: {e}", verbose, is_error=True, status=status)
     return saved_abs_paths
 
 
-def _prepare_media_for_gemini(tweet_data: Dict[str, Any], profile_name: str, eternity_folder: str, verbose: bool = False) -> List[str]:
+def _prepare_media_for_gemini(tweet_data: Dict[str, Any], profile_name: str, eternity_folder: str, verbose: bool = False, status=None, ignore_video_tweets: bool = False) -> List[str]:
     media_abs_paths_for_gemini: List[str] = []
     raw_media_urls = tweet_data.get('media_urls')
 
-    if raw_media_urls == 'video' or (isinstance(raw_media_urls, str) and raw_media_urls.strip() == 'video'):
+    if ignore_video_tweets and (raw_media_urls == 'video' or (isinstance(raw_media_urls, str) and raw_media_urls.strip() == 'video')):
+        _log(f"Ignoring video tweet {tweet_data['tweet_id']} due to --ignore-video-tweets flag.", verbose, is_error=False, status=status)
+    elif raw_media_urls == 'video' or (isinstance(raw_media_urls, str) and raw_media_urls.strip() == 'video'):
         try:
             video_path = download_twitter_videos([tweet_data['tweet_url']], profile_name="Download", headless=True, verbose=verbose)
             if video_path:
-                copied = _copy_media_into_eternity([video_path], eternity_folder, verbose)
+                copied = _copy_media_into_eternity([video_path], eternity_folder, verbose, status=status)
                 media_abs_paths_for_gemini.extend(copied)
             else:
-                _log(f"Video download failed or returned no path for {tweet_data['tweet_id']}", verbose, is_error=False)
+                _log(f"Video download failed or returned no path for {tweet_data['tweet_id']}", verbose, is_error=False, status=status)
         except Exception as e:
-            _log(f"Error handling video for tweet {tweet_data['tweet_id']}: {str(e)}", verbose, is_error=True)
+            _log(f"Error handling video for tweet {tweet_data['tweet_id']}: {str(e)}", verbose, is_error=True, status=status)
     elif raw_media_urls:
         try:
             image_urls = [u.strip() for u in str(raw_media_urls).split(';') if u and u.strip()]
             if image_urls:
                 downloaded_images = download_images(image_urls, profile_name, verbose)
-                copied = _copy_media_into_eternity(downloaded_images, eternity_folder, verbose)
+                copied = _copy_media_into_eternity(downloaded_images, eternity_folder, verbose, status=status)
                 media_abs_paths_for_gemini.extend(copied)
         except Exception as e:
-            _log(f"Error handling images for tweet {tweet_data['tweet_id']}: {str(e)}", verbose, is_error=True)
+            _log(f"Error handling images for tweet {tweet_data['tweet_id']}: {str(e)}", verbose, is_error=True, status=status)
 
     return media_abs_paths_for_gemini
 
 
-def _get_tweets_from_profile_page(driver, profile_url: str, max_tweets_to_collect: int = 10, days_back_limit: int = 2, verbose: bool = False) -> List[Dict[str, Any]]:
-    _log(f"Navigating to profile: {profile_url}", verbose)
+def _get_tweets_from_profile_page(driver, profile_url: str, max_tweets_to_collect: int = 10, days_back_limit: int = 2, verbose: bool = False, status=None) -> List[Dict[str, Any]]:
+    _log(f"Navigating to profile: {profile_url}", verbose, status=status)
     driver.get(profile_url)
     time.sleep(5)
 
@@ -133,7 +142,7 @@ def _get_tweets_from_profile_page(driver, profile_url: str, max_tweets_to_collec
                     'url': tweet_url,
                     'tweet_id': tweet_id
                 }
-                tweet_data = process_container(raw_container_data, {}, verbose=verbose)
+                tweet_data = process_container(raw_container_data, {})
 
                 if tweet_data:
                     tweet_date_obj = datetime.strptime(tweet_data['tweet_date'], '%Y-%m-%d %H:%M:%S')
@@ -146,7 +155,7 @@ def _get_tweets_from_profile_page(driver, profile_url: str, max_tweets_to_collec
             except TimeoutException:
                 continue
             except Exception as e:
-                _log(f"Error processing container on profile page: {e}", verbose, is_error=False)
+                _log(f"Error processing container on profile page: {e}", verbose, is_error=False, status=status)
                 continue
         
         if max_tweets_to_collect > 0 and len(collected_tweets) >= max_tweets_to_collect:
@@ -158,14 +167,14 @@ def _get_tweets_from_profile_page(driver, profile_url: str, max_tweets_to_collec
         scroll_attempts += 1
 
         if new_found_in_pass == 0 and new_height == current_height and scroll_attempts > 5:
-            _log("No new content found or unable to scroll further, stopping collection on this profile.", verbose, is_error=False)
+            _log("No new content found or unable to scroll further, stopping collection on this profile.", verbose, is_error=False, status=status)
             break
 
-    _log(f"Collected {len(collected_tweets)} recent tweets from {profile_url}", verbose)
+    _log(f"Collected {len(collected_tweets)} recent tweets from {profile_url}", verbose, status=status)
     return collected_tweets[:max_tweets_to_collect] if max_tweets_to_collect > 0 else collected_tweets
 
 
-def run_eternity_mode(profile_name: str, custom_prompt: str, eternity_browser_profile: str, max_tweets: int = 10, days_back: int = 2, status=None, verbose: bool = False, headless: bool = True) -> List[Dict[str, Any]]:
+def run_eternity_mode(profile_name: str, custom_prompt: str, eternity_browser_profile: str, max_tweets: int = 10, days_back: int = 2, status=None, verbose: bool = False, headless: bool = True, ignore_video_tweets: bool = False) -> List[Dict[str, Any]]:
     
     browser_profile_name = eternity_browser_profile or profile_name
     user_data_dir = get_browser_data_dir(browser_profile_name)
@@ -182,8 +191,8 @@ def run_eternity_mode(profile_name: str, custom_prompt: str, eternity_browser_pr
         return []
 
     all_collected_tweets: List[Dict[str, Any]] = []
-    if profile_name not in PROFILES or not PROFILES[profile_name].get("target_profiles"):
-        _log(f"Profile '{profile_name}' has no target_profiles defined. Skipping eternity mode.", verbose, is_error=False)
+    if profile_name not in PROFILES or "target_profiles" not in PROFILES[profile_name]:
+        _log(f"Error: Profile '{profile_name}' has no target_profiles defined. Please define target_profiles in profiles.py for eternity mode.", verbose, is_error=True, status=status)
         driver.quit()
         return []
 
@@ -191,8 +200,18 @@ def run_eternity_mode(profile_name: str, custom_prompt: str, eternity_browser_pr
     if status:
         status.update(f"[white]Scraping {len(target_profile_urls)} target profiles for {max_tweets} tweets each from last {days_back} days...[/white]")
 
+    api_pool = APIKeyPool()
+    rate_limiter = RateLimiter()
+
+    service = get_google_sheets_service(verbose=verbose)
+    reply_sheet_name = f"{sanitize_sheet_name(profile_name)}_replied_tweets"
+    all_replies = get_generated_replies(service, reply_sheet_name, verbose=verbose)
+
+    if all_replies:
+        all_replies = [r for r in all_replies if r.get('approved')]
+
     for target_url in target_profile_urls:
-        collected_from_current_profile = _get_tweets_from_profile_page(driver, target_url, max_tweets_to_collect=max_tweets, days_back_limit=days_back, verbose=verbose)
+        collected_from_current_profile = _get_tweets_from_profile_page(driver, target_url, max_tweets_to_collect=max_tweets, days_back_limit=days_back, verbose=verbose, status=status)
         all_collected_tweets.extend(collected_from_current_profile)
         if status:
             status.update(f"[white]Collected {len(all_collected_tweets)} tweets overall. Continuing...[/white]")
@@ -201,20 +220,17 @@ def run_eternity_mode(profile_name: str, custom_prompt: str, eternity_browser_pr
             break
     
     if not all_collected_tweets:
-        _log("No tweets found from target profiles within the specified time frame.", verbose, is_error=False)
+        _log("No tweets found from target profiles within the specified time frame.", verbose, is_error=False, status=status)
         driver.quit()
         return []
 
     if status:
         status.update(f"[white]Processing collected tweets ({len(all_collected_tweets)} raw containers)...[/white]")
 
-    api_pool = APIKeyPool()
-    rate_limiter = RateLimiter()
-
     enriched_items: List[Dict[str, Any]] = []
     for td in all_collected_tweets:
-        media_abs_paths = _prepare_media_for_gemini(td, profile_name, eternity_folder, verbose)
-        args = (td['tweet_text'], media_abs_paths, profile_name, api_pool.get_key(), rate_limiter, custom_prompt, td['tweet_id'])
+        media_abs_paths = _prepare_media_for_gemini(td, profile_name, eternity_folder, verbose, status=status, ignore_video_tweets=ignore_video_tweets)
+        args = (td['tweet_text'], media_abs_paths, profile_name, api_pool.get_key(), rate_limiter, custom_prompt, td['tweet_id'], all_replies)
         enriched_items.append({
             'tweet_data': td,
             'media_abs_paths': media_abs_paths,
@@ -286,16 +302,16 @@ def run_eternity_mode(profile_name: str, custom_prompt: str, eternity_browser_pr
     try:
         with open(schedule_path, 'w') as f:
             json.dump(results, f, indent=2)
-        _log(f"Saved Eternity approval file: {schedule_path}", verbose)
+        _log(f"Saved Eternity approval file: {schedule_path}", verbose, status=status)
     except Exception as e:
-        _log(f"Failed to save schedule file: {e}", verbose, is_error=True)
+        _log(f"Failed to save schedule file: {e}", verbose, is_error=True, status=status)
 
     try:
-        html_path = build_eternity_schedule_html(profile_name, verbose=verbose)
+        html_path = build_eternity_schedule_html(profile_name, verbose=verbose, status=status)
         if html_path:
-            _log(f"Eternity Review HTML ready: {html_path}", verbose)
+            _log(f"Eternity Review HTML ready: {html_path}", verbose, status=status)
     except Exception as e:
-        _log(f"Failed to generate Eternity review HTML: {e}", verbose, is_error=False)
+        _log(f"Failed to generate Eternity review HTML: {e}", verbose, is_error=False, status=status)
 
     try:
         driver.quit()
@@ -318,7 +334,7 @@ def clear_eternity_files(profile_name: str, status=None, verbose: bool = False) 
                     os.remove(path)
                 deleted += 1
             except Exception as e:
-                _log(f"Could not delete {path}: {e}", verbose, is_error=False)
+                _log(f"Could not delete {path}: {e}", verbose, is_error=False, status=status)
         
         schedule_path = os.path.join(eternity_folder, 'schedule.json')
         with open(schedule_path, 'w') as f:
@@ -326,7 +342,7 @@ def clear_eternity_files(profile_name: str, status=None, verbose: bool = False) 
         if status:
             status.update(f"[white]Cleared {deleted} items and reset {schedule_path}[/white]")
         else:
-            _log(f"Cleared {deleted} items and reset {schedule_path}", verbose)
+            _log(f"Cleared {deleted} items and reset {schedule_path}", verbose, status=status)
     except Exception as e:
-        _log(f"Failed to clear Eternity files for {profile_name}: {e}", verbose, is_error=True)
+        _log(f"Failed to clear Eternity files for {profile_name}: {e}", verbose, is_error=True, status=status)
     return deleted 

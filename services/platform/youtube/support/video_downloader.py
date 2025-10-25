@@ -5,6 +5,7 @@ import subprocess
 from datetime import datetime
 from rich.console import Console
 from typing import List, Dict, Any, Optional
+from services.support.path_config import get_downloads_dir
 
 console = Console()
 
@@ -49,7 +50,7 @@ def download_videos_for_youtube_scraper(profile_name: str, videos_data: List[Dic
         "failed": []
     }
 
-    output_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'youtube', profile_name, 'videos'))
+    output_dir = os.path.abspath(os.path.join(get_downloads_dir(), 'youtube', profile_name, 'videos'))
     os.makedirs(output_dir, exist_ok=True)
 
     total_videos = len(videos_data)

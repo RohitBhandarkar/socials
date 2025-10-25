@@ -10,6 +10,7 @@ from rich.console import Console
 from typing import List, Dict, Any, Optional
 from services.support.api_key_pool import APIKeyPool
 from services.support.rate_limiter import RateLimiter
+from services.support.path_config import get_community_dir
 
 console = Console()
 api_key_pool = APIKeyPool()
@@ -40,7 +41,7 @@ def analyze_community_tweets_for_engagement(profile_key: str, community_name: st
     genai.configure(api_key=gemini_api_key)
     model = genai.GenerativeModel('gemini-2.5-flash')
 
-    community_folder = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'community', profile_key))
+    community_folder = get_community_dir(profile_key)
     
     latest_json_file = None
     latest_timestamp = None
@@ -80,7 +81,13 @@ def analyze_community_tweets_for_engagement(profile_key: str, community_name: st
 
     _log(f"Analyzing {len(tweets_data)} tweets for engagement...", verbose)
 
-    prompt_parts = [PROFILES[profile_key]['engagement_analysis_prompt'], "\n\nTweets for analysis:"]
+    if 'engagement_analysis_prompt' not in PROFILES[profile_key]:
+        _log(f"Error: 'engagement_analysis_prompt' not found for profile '{profile_key}'. Please define it in profiles.py.", verbose, is_error=True)
+        return []
+    else:
+        engagement_prompt = PROFILES[profile_key]['engagement_analysis_prompt']
+
+    prompt_parts = [engagement_prompt, "\n\nTweets for analysis:"]
     for i, tweet in enumerate(tweets_data):
         prompt_parts.append(f"\nTweet {i+1}:")
         prompt_parts.append(f"Text: {tweet.get('tweet_text', 'N/A')}")

@@ -10,18 +10,27 @@ from services.support.path_config import get_eternity_schedule_file_path, get_re
 
 console = Console()
 
-def _log(message: str, verbose: bool, is_error: bool = False):
-    if verbose or is_error:
-        log_message = message
-        if is_error and not verbose:
+def _log(message: str, verbose: bool, is_error: bool = False, status=None):
+    if status and (is_error or verbose):
+        status.stop()
+
+    log_message = message
+    if is_error:
+        if not verbose:
             match = re.search(r'(\d{3}\s+.*?)(?:\.|\n|$)', message)
             if match:
                 log_message = f"Error: {match.group(1).strip()}"
             else:
                 log_message = message.split('\n')[0].strip()
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        color = "bold red" if is_error else "white"
+        color = "bold red"
         console.print(f"[eternity_html.py] {timestamp}|[{color}]{log_message}[/{color}]")
+    elif verbose:
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        color = "white"
+        console.print(f"[eternity_html.py] {timestamp}|[{color}]{message}[/{color}]")
+    elif status:
+        status.update(message)
 
 MEDIA_IMAGE_EXTS = {'.png', '.jpg', '.jpeg', '.gif', '.webp'}
 MEDIA_VIDEO_EXTS = {'.mp4', '.mov', '.avi', '.mkv', '.webm'}
@@ -39,17 +48,17 @@ def _render_media_tags(media_files: List[str]) -> str:
     return '\n'.join(tags)
 
 
-def build_eternity_schedule_html(profile_name: str, verbose: bool = False) -> Optional[str]:
+def build_eternity_schedule_html(profile_name: str, verbose: bool = False, status=None) -> Optional[str]:
     schedule_path = get_eternity_schedule_file_path(profile_name)
     if not os.path.exists(schedule_path):
-        _log(f"Schedule not found: {schedule_path}", verbose, is_error=True)
+        _log(f"Schedule not found: {schedule_path}", verbose, is_error=True, status=status)
         return None
 
     try:
         with open(schedule_path, 'r') as f:
             items: List[Dict[str, Any]] = json.load(f)
     except Exception as e:
-        _log(f"Failed to read schedule file: {e}", verbose, is_error=True)
+        _log(f"Failed to read schedule file: {e}", verbose, is_error=True, status=status)
         return None
 
     title = f"Eternity Review - {profile_name}"
@@ -214,8 +223,8 @@ def build_eternity_schedule_html(profile_name: str, verbose: bool = False) -> Op
     try:
         with open(out_path, 'w') as f:
             f.write(html_doc)
-        _log(f"Generated review HTML: {out_path}", verbose)
+        _log(f"Generated review HTML: {out_path}", verbose, status=status)
         return out_path
     except Exception as e:
-        _log(f"Failed to write review HTML: {e}", verbose, is_error=True)
+        _log(f"Failed to write review HTML: {e}", verbose, is_error=True, status=status)
         return None 

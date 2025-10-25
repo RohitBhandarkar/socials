@@ -1,5 +1,5 @@
-import os
 import re
+import os
 import time
 
 from pathlib import Path
@@ -10,8 +10,8 @@ from typing import List, Dict, Any, Optional
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.common.exceptions import TimeoutException
 from services.support.web_driver_handler import setup_driver
+from services.support.path_config import get_browser_data_dir
 from selenium.webdriver.support import expected_conditions as EC
-
 
 console = Console()
 
@@ -177,8 +177,10 @@ def download_captions_for_videos(profile_name: str, videos_data: List[Dict[str, 
             '--disable-client-side-phishing-detection',
         ]
 
+        user_data_dir = get_browser_data_dir("Download")
+
         driver, setup_messages = setup_driver(
-            user_data_dir=os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'browser-data', profile_name)),
+            user_data_dir=user_data_dir,
             profile=profile_name,
             headless=headless,
             prefs=prefs,

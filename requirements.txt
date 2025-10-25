@@ -10,3 +10,4 @@ google-auth-httplib2
 pyperclip
 tweepy
 oauth2client
+pytest

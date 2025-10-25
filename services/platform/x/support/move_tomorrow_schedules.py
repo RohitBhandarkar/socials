@@ -48,7 +48,7 @@ def _load_json(path: str) -> List[Dict]:
     except Exception:
         return []
 
-def move_tomorrows_from_schedule2(profile_name: str = "Default", verbose: bool = False) -> int:
+def move_tomorrows_from_schedule2(profile_name: str = "Default", verbose: bool = False, status=None) -> int:
     _, schedule_json, schedule2_json = _paths(profile_name)
 
     schedule2_items = _load_json(schedule2_json)
@@ -64,7 +64,7 @@ def move_tomorrows_from_schedule2(profile_name: str = "Default", verbose: bool =
     save_tweet_schedules([], profile_name)
 
     if not schedule2_items:
-        _log(f"Cleared schedule.json. No schedule2.json items found for profile '{profile_name}'.", verbose)
+        _log(f"Cleared schedule.json. No schedule2.json items found for profile '{profile_name}'.", verbose, status=status)
         return 0
 
     tomorrow_date = (datetime.now() + timedelta(days=1)).strftime('%Y-%m-%d')
@@ -83,7 +83,7 @@ def move_tomorrows_from_schedule2(profile_name: str = "Default", verbose: bool =
             to_move.append(item)
 
     if not to_move:
-        _log(f"Cleared schedule.json. No tweets for tomorrow found in schedule2.json for profile '{profile_name}'. schedule2.json left unchanged.", verbose)
+        _log(f"Cleared schedule.json. No tweets for tomorrow found in schedule2.json for profile '{profile_name}'. schedule2.json left unchanged.", verbose, status=status)
         return 0
 
     merged = list(to_move)
@@ -94,7 +94,7 @@ def move_tomorrows_from_schedule2(profile_name: str = "Default", verbose: bool =
 
     save_tweet_schedules(merged, profile_name)
 
-    _log(f"Cleared current schedule and copied {len(to_move)} tweet(s) for {tomorrow_date} from schedule2.json to schedule.json for profile '{profile_name}'. schedule2.json left unchanged.", verbose)
+    _log(f"Cleared current schedule and copied {len(to_move)} tweet(s) for {tomorrow_date} from schedule2.json to schedule.json for profile '{profile_name}'. schedule2.json left unchanged.", verbose, status=status)
     return len(to_move)
 
 

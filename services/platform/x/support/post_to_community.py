@@ -28,9 +28,9 @@ def _log(message: str, verbose: bool, status=None, is_error: bool = False):
 def post_to_community_tweet(driver, tweet_text, community_name, status=None, verbose: bool = False):
     try:
         if status:
-            _log("Navigating to tweet compose page...", verbose, status)
+            _log("Navigating to tweet compose page...", verbose, status=status)
         else:
-            _log("Navigating to tweet compose page...", verbose)
+            _log("Navigating to tweet compose page...", verbose, status=status)
         driver.get('https://x.com/compose/tweet')
         time.sleep(3)
 
@@ -42,9 +42,9 @@ def post_to_community_tweet(driver, tweet_text, community_name, status=None, ver
         time.sleep(2)
 
         if status:
-            _log(f"Selecting community '{community_name}'...", verbose, status)
+            _log(f"Selecting community '{community_name}'...", verbose, status=status)
         else:
-            _log(f"Selecting community '{community_name}'...", verbose)
+            _log(f"Selecting community '{community_name}'...", verbose, status=status)
         
         choose_audience_button = WebDriverWait(driver, 10).until(
             EC.element_to_be_clickable((By.CSS_SELECTOR, '[aria-label="Choose audience"]'))
@@ -60,9 +60,9 @@ def post_to_community_tweet(driver, tweet_text, community_name, status=None, ver
         time.sleep(2)
         
         if status:
-            _log("Clicking post button...", verbose, status)
+            _log("Clicking post button...", verbose, status=status)
         else:
-            _log("Clicking post button...", verbose)
+            _log("Clicking post button...", verbose, status=status)
         post_button = WebDriverWait(driver, 10).until(
             EC.element_to_be_clickable((By.CSS_SELECTOR, '[data-testid="tweetButton"]'))
         )
@@ -72,10 +72,10 @@ def post_to_community_tweet(driver, tweet_text, community_name, status=None, ver
         driver.get('https://x.com')
         time.sleep(3)
         if status:
-            _log(f"Successfully posted tweet to community '{community_name}'", verbose, status)
+            _log(f"Successfully posted tweet to community '{community_name}'", verbose, status=status)
         else:
-            _log(f"Successfully posted tweet to community '{community_name}'", verbose)
+            _log(f"Successfully posted tweet to community '{community_name}'", verbose, status=status)
         return True
     except Exception as e:
-        _log(f"Failed to post tweet to community: {e}", verbose, is_error=True)
+        _log(f"Failed to post tweet to community: {e}", verbose, is_error=True, status=status)
         return False

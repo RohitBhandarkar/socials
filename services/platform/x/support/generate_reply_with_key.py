@@ -64,10 +64,7 @@ def generate_reply_with_key(args, status=None, verbose: bool = False):
             return f"Error generating reply: {reason}"
 
         genai.configure(api_key=api_key)
-        model = genai.GenerativeModel(model_name)
-        service = get_google_sheets_service(verbose=verbose)
-        profile_suffix = profile_name
-        reply_sheet_name = f"{sanitize_sheet_name(profile_suffix)}_replied_tweets"
+        model = genai.GenerativeModel(model_name)        
         replies = all_replies
         sample_section = ''
         if replies:

@@ -9,6 +9,7 @@ from rich.console import Console
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from services.support.web_driver_handler import setup_driver
+from services.support.path_config import get_browser_data_dir
 from selenium.webdriver.support import expected_conditions as EC
 from services.platform.x.support.schedule_tweet import schedule_tweet
 from services.platform.x.support.load_tweet_schedules import load_tweet_schedules
@@ -40,7 +41,7 @@ def _log(message: str, verbose: bool, status=None, is_error: bool = False):
 
 def process_scheduled_tweets(profile_name="Default", verbose: bool = False, headless: bool = True):
     _log(f"Processing scheduled tweets for profile: {profile_name}", verbose)
-    user_data_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'browser-data', profile_name))
+    user_data_dir = get_browser_data_dir(profile_name)
     driver = None
     try:
         with Status("[white]Initializing WebDriver...[/white]", spinner="dots", console=console) as status:

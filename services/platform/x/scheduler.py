@@ -2,7 +2,6 @@ import os
 import re
 import argparse
 
-
 from datetime import datetime
 from dotenv import load_dotenv
 from rich.console import Console
@@ -14,7 +13,6 @@ from services.support.path_config import initialize_directories
 from services.platform.x.support.clear_media_files import clear_media
 from services.platform.x.support.display_tweets import display_scheduled_tweets
 from services.platform.x.support.generate_sample_posts import generate_sample_posts
-from services.platform.x.support.try_mp4_missing_media import try_mp4_for_missing_media
 from services.platform.x.support.generate_captions import generate_captions_for_schedule
 from services.platform.x.support.process_scheduled_tweets import process_scheduled_tweets
 from services.platform.x.support.move_tomorrow_schedules import move_tomorrows_from_schedule2
@@ -60,15 +58,17 @@ def main():
     load_dotenv()
     initialize_directories()
     parser = argparse.ArgumentParser(description="Twitter Scheduler CLI Tool")
+    
+    # Profile
     parser.add_argument("--profile", type=str, default="Default", help="Profile name to use")
-    parser.add_argument("--generate-sample", action="store_true", help="Generate sample posts.")
+    
+    # Processing Tweets (Scheduling)
     parser.add_argument("--process-tweets", action="store_true", help="Process and schedule tweets.")
-    parser.add_argument("--try-mp4", action="store_true", help="Attempt .mp4 conversion for missing media.")
-    parser.add_argument("--generate-captions", action="store_true", help="Generate Gemini captions for scheduled media.")
-    parser.add_argument("--display-tweets", action="store_true", help="Display scheduled tweets.")
-    parser.add_argument("--clear-media", action="store_true", help="Delete all media files for the profile in the schedule folder.")
+    # Make content for multiple days (--sched-tom will just schedule posts for the next day)
     parser.add_argument("--sched-tom", action="store_true", help="Before processing, move tomorrow's tweets from schedule2.json to schedule.json and schedule them.")
-    parser.add_argument("--show-complete", action="store_true", help="Show complete logs (INFO level and above).") 
+
+    # Generating sample
+    parser.add_argument("--generate-sample", action="store_true", help="Generate sample posts.")
     parser.add_argument("--gap-type", type=str, choices=["random", "fixed"], default="random", help="Type of gap for sample post generation.")
     parser.add_argument("--min-gap-hours", type=int, default=0, help="Minimum gap hours for random gap.")
     parser.add_argument("--min-gap-minutes", type=int, default=1, help="Minimum gap minutes for random gap.")
@@ -80,7 +80,20 @@ def main():
     parser.add_argument("--start-image-number", type=int, default=1, help="Starting image number for sample posts.")
     parser.add_argument("--num-days", type=int, default=1, help="Number of days to schedule sample posts for.")
     parser.add_argument("--start-date", type=str, help="Start date for scheduling in YYYY-MM-DD format.")
+    
+    # Generate Captions
+    parser.add_argument("--generate-captions", action="store_true", help="Generate Gemini captions for scheduled media.")
+
+    # Display Scheduled Tweets
+    parser.add_argument("--display-tweets", action="store_true", help="Display scheduled tweets.")
+    # can pass but .env can handle 
     parser.add_argument("--gemini-api-key", type=str, help="Gemini API key for caption generation.")
+    
+    # Clear All media
+    parser.add_argument("--clear-media", action="store_true", help="Delete all media files for the profile in the schedule folder.")
+
+    # Additional
+    parser.add_argument("--show-complete", action="store_true", help="Show complete logs (INFO level and above).") 
     parser.add_argument("--verbose", action="store_true", help="Enable detailed logging output for debugging and monitoring. Shows comprehensive information about the execution process.")
     parser.add_argument("--no-headless", action="store_true", help="Disable headless browser mode for debugging and observation. The browser UI will be visible.")
 
@@ -91,7 +104,7 @@ def main():
         _log("Please create a profiles.py file based on profiles.sample.py to define your profiles.", args.verbose, is_error=True, status=None, api_info=None)
         return
 
-    if getattr(args, 'sched_tom', False) and not args.process_tweets and not args.display_tweets and not args.generate_sample and not args.try_mp4 and not args.generate_captions and not args.clear_media:
+    if getattr(args, 'sched_tom', False) and not args.process_tweets and not args.display_tweets and not args.generate_sample and not args.generate_captions and not args.clear_media:
         moved = move_tomorrows_from_schedule2(args.profile)
         if moved:
             _log(f"{moved} tweet(s) moved from schedule2.json to schedule.json for tomorrow.", args.verbose, status=None, api_info=None)
@@ -125,10 +138,6 @@ def main():
                 _log("No tomorrow tweets found in schedule2.json.", args.verbose, status=None, api_info=None)
         process_scheduled_tweets(args.profile, headless=not args.no_headless)
         _log("Processing complete.", args.verbose, status=None, api_info=None)
-    elif args.try_mp4:
-        _log("Checking for missing media and attempting .mp4 conversion...", args.verbose, status=None, api_info=None)
-        try_mp4_for_missing_media(args.profile)
-        _log("Media check complete.", args.verbose, status=None, api_info=None)
     elif args.generate_captions:
         gemini_api_key = args.gemini_api_key or os.environ.get("GEMINI_API")
         if not gemini_api_key:

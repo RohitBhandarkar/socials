@@ -102,6 +102,108 @@ def sanitize_sheet_name(name):
     sanitized = sanitized[:30]
     return sanitized.lower()
 
+def create_new_sheet(service, sheet_name: str, verbose: bool = False, status=None) -> Optional[str]:
+    try:
+        sanitized_sheet_name = sanitize_sheet_name(sheet_name)
+
+        can_call, reason = api_call_tracker.can_make_call("sheets", "read")
+        if not can_call:
+            _log(f"[RATE LIMIT] Cannot get spreadsheet properties to check for existing sheets: {reason}", verbose, is_error=True, status=status)
+            return None
+
+        _log("[HITTING API] Getting spreadsheet properties to check for existing sheets.", verbose, api_info=api_call_tracker.get_quot_info("sheets", "read"), status=status)
+        spreadsheet_metadata = service.spreadsheets().get(spreadsheetId=SPREADSHEET_ID).execute()
+        api_call_tracker.record_call("sheets", "read", success=True, response=spreadsheet_metadata)
+        existing_sheets = [sheet['properties']['title'] for sheet in spreadsheet_metadata['sheets']]
+        
+        if sanitized_sheet_name not in existing_sheets:
+            requests = [{
+                'addSheet': {
+                    'properties': {
+                        'title': sanitized_sheet_name
+                    }
+                }
+            }]
+            body = {'requests': requests}
+
+            can_call, reason = api_call_tracker.can_make_call("sheets", "write")
+            if not can_call:
+                _log(f"[RATE LIMIT] Cannot add new sheet: {reason}", verbose, is_error=True, status=status)
+                return None
+            
+            _log(f"[HITTING API] Adding new sheet: {sanitized_sheet_name}", verbose, api_info=api_call_tracker.get_quot_info("sheets", "write"), status=status)
+            response = service.spreadsheets().batchUpdate(
+                spreadsheetId=SPREADSHEET_ID,
+                body=body
+            ).execute()
+            api_call_tracker.record_call("sheets", "write", success=True, response=response)
+            _log(f"Created new Google Sheet: {sanitized_sheet_name}", verbose, status=status)
+        else:
+            _log(f"Sheet '{sanitized_sheet_name}' already exists.", verbose, status=status)
+
+        return sanitized_sheet_name
+
+    except Exception as e:
+        _log(f"Error creating new sheet: {str(e)}", verbose, is_error=True, status=status)
+        api_call_tracker.record_call("sheets", "write", success=False, response=e)
+        return None
+
+def append_to_sheet(service, sheet_name: str, headers: List[str], data_rows: List[List[Any]], verbose: bool = False, status=None) -> bool:
+    try:
+        sanitized_sheet_name = sanitize_sheet_name(sheet_name)
+
+        can_call, reason = api_call_tracker.can_make_call("sheets", "read")
+        if not can_call:
+            _log(f"[RATE LIMIT] Cannot read sheet to check for headers: {reason}", verbose, is_error=True, status=status)
+            return False
+
+        _log(f"[HITTING API] Reading sheet '{sanitized_sheet_name}' to check for headers.", verbose, api_info=api_call_tracker.get_quot_info("sheets", "read"), status=status)
+        result = service.spreadsheets().values().get(
+            spreadsheetId=SPREADSHEET_ID,
+            range=f'{sanitized_sheet_name}!A1:Z1'
+        ).execute()
+        api_call_tracker.record_call("sheets", "read", success=True, response=result)
+
+        existing_headers = result.get('values', [[]])[0]
+
+        if not existing_headers:
+            can_call, reason = api_call_tracker.can_make_call("sheets", "write")
+            if not can_call:
+                _log(f"[RATE LIMIT] Cannot write headers to sheet: {reason}", verbose, is_error=True, status=status)
+                return False
+
+            _log(f"[HITTING API] Writing headers to sheet '{sanitized_sheet_name}'.", verbose, api_info=api_call_tracker.get_quot_info("sheets", "write"), status=status)
+            response = service.spreadsheets().values().update(
+                spreadsheetId=SPREADSHEET_ID,
+                range=f'{sanitized_sheet_name}!A1',
+                valueInputOption='RAW',
+                body={'values': [headers]}
+            ).execute()
+            api_call_tracker.record_call("sheets", "write", success=True, response=response)
+
+        if data_rows:
+            can_call, reason = api_call_tracker.can_make_call("sheets", "write")
+            if not can_call:
+                _log(f"[RATE LIMIT] Cannot append data to sheet: {reason}", verbose, is_error=True, status=status)
+                return False
+
+            _log(f"[HITTING API] Appending {len(data_rows)} rows to sheet '{sanitized_sheet_name}'.", verbose, api_info=api_call_tracker.get_quot_info("sheets", "write"), status=status)
+            response = service.spreadsheets().values().append(
+                spreadsheetId=SPREADSHEET_ID,
+                range=f'{sanitized_sheet_name}!A:Z',
+                valueInputOption='RAW',
+                insertDataOption='INSERT_ROWS',
+                body={'values': data_rows}
+            ).execute()
+            api_call_tracker.record_call("sheets", "write", success=True, response=response)
+            _log(f"Successfully appended {len(data_rows)} rows to sheet '{sanitized_sheet_name}'.", verbose, status=status)
+        
+        return True
+
+    except Exception as e:
+        _log(f"Error appending to sheet: {str(e)}", verbose, is_error=True, status=status)
+        api_call_tracker.record_call("sheets", "write", success=False, response=e)
+        return False
 
 def create_reply_sheet(service, profile_suffix, verbose: bool = False, status=None):
     try:

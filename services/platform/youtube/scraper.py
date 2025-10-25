@@ -15,6 +15,7 @@ from services.platform.youtube.support.video_downloader import download_videos_f
 from services.platform.youtube.support.get_latest_dated_json_file import get_latest_dated_json_file
 from services.platform.youtube.support.file_manager import clear_youtube_files, clean_and_sort_videos
 from services.platform.youtube.support.content_analyzer import analyze_video_content_with_gemini, suggest_best_content_with_gemini
+from services.support.path_config import initialize_directories
 
 console = Console()
 
@@ -42,6 +43,7 @@ def _log(message: str, verbose: bool = False, is_error: bool = False, status: Op
 
 def main():
     load_dotenv()
+    initialize_directories()
     parser = argparse.ArgumentParser(description="YouTube Scraper CLI Tool")
     parser.add_argument("--profile", type=str, default="Default", help="Profile name to use. Scraped data will be saved to youtube/{profile}.")
     parser.add_argument("--verbose", action="store_true", help="Enable detailed logging output for debugging and monitoring. Shows comprehensive information about the execution process.")

@@ -7,8 +7,8 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from services.platform.x.support.process_container import process_container
-from services.support.sheets_util import get_sheet_service, append_to_sheet, create_new_sheet
 from services.platform.x.support.capture_containers_scroll import capture_containers_and_scroll
+from services.support.sheets_util import get_google_sheets_service, create_online_action_mode_sheet, save_action_mode_replies_to_sheet
 
 console = Console()
 
@@ -25,18 +25,18 @@ def _log(message: str, verbose: bool, is_error: bool = False):
         color = "bold red" if is_error else "white"
         console.print(f"[profile_analyzer.py] {timestamp}|[{color}]{log_message}[/{color}]")
 
-def analyze_profile(driver, profile_name: str, target_profile_name: str, verbose: bool = False):
+def analyze_profile(driver, profile_name: str, target_profile_name: str, verbose: bool = False, status=None):
     _log(f"Starting analysis for target profile: {target_profile_name}", verbose)
 
     sheet_name = f"{profile_name}_profile_{target_profile_name}"
     _log(f"Google Sheet name: {sheet_name}", verbose)
 
-    service = get_sheet_service()
+    service = get_google_sheets_service(verbose=verbose, status=status)
     if not service:
         _log("Failed to get Google Sheets service. Exiting.", verbose, is_error=True)
         return
 
-    create_new_sheet(service, sheet_name)
+    create_online_action_mode_sheet(service, profile_name, verbose=verbose, status=status)
 
     profile_url = f"https://x.com/{target_profile_name}/with_replies"
     driver.get(profile_url)
@@ -74,9 +74,7 @@ def analyze_profile(driver, profile_name: str, target_profile_name: str, verbose
     _log(f"Processed {len(all_tweet_data)} unique tweets.", verbose)
 
     if all_tweet_data:
-        headers = list(all_tweet_data[0].keys())
-        data_rows = [list(tweet.values()) for tweet in all_tweet_data]
-        append_to_sheet(service, sheet_name, headers, data_rows)
+        save_action_mode_replies_to_sheet(service, profile_name, all_tweet_data, verbose=verbose, status=status)
         _log(f"Successfully saved {len(all_tweet_data)} tweets to Google Sheet '{sheet_name}'.", verbose)
     else:
         _log("No tweets to save to Google Sheet.", verbose)

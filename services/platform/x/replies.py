@@ -4,12 +4,13 @@ import sys
 import time
 import argparse
 import threading
+
 from dotenv import load_dotenv
 from rich.status import Status
 from rich.console import Console
 from typing import Optional, Dict, Any
-
 from profiles import PROFILES, SPECIFIC_TARGET_PROFILES
+
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from datetime import datetime, timedelta
@@ -22,7 +23,6 @@ from services.platform.x.support.action_server import start_action_mode_review_s
 from services.platform.x.support.community_scraper_utils import scrape_community_tweets
 from services.platform.x.support.eternity import run_eternity_mode, clear_eternity_files 
 from services.platform.x.support.tweet_analyzer import analyze_community_tweets_for_engagement
-from services.platform.x.support.turbin import run_turbin_mode, clear_turbin_files, serve_turbin_review
 from services.platform.x.support.post_approved_tweets import post_approved_replies, check_profile_credentials
 from services.platform.x.support.action import run_action_mode, run_action_mode_with_review, post_approved_action_mode_replies, run_action_mode_online, post_approved_action_mode_replies_online
 
@@ -58,8 +58,6 @@ def _log(message: str, verbose: bool, status=None, is_error: bool = False, api_i
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         color = "white"
         console.print(f"[x-replies.py] {timestamp}|[{color}]{message}[/{color}]")
-        if status:
-            status.start()
     elif status:
         status.update(message)
 
@@ -67,57 +65,61 @@ def main():
     load_dotenv()
     initialize_directories()
     parser = argparse.ArgumentParser(description="X Replies CLI Tool")
+    
+    # Profile
     parser.add_argument("--profile", type=str, default="Default", help="Profile name to use for authentication and configuration. Must match a profile defined in the profiles configuration.")
-    parser.add_argument("--action-mode", action="store_true", help="Activate action mode to automatically generate and post replies to tweets using AI analysis. This mode will scrape recent tweets, analyze them with Gemini AI, and generate contextual replies.")
-    parser.add_argument("--turbin-mode", action="store_true", help="Activate Turbin mode to collect and analyze tweets, then save generated replies for manual review and approval. This mode processes up to 17 tweets and generates AI-powered responses.")
-    parser.add_argument("--clear", action="store_true", help="Clear all Turbin schedule files and associated media files for the specified profile. This removes all pending replies and media from the Turbin workflow.")
-    parser.add_argument("--review", action="store_true", help="Start a local web server for reviewing and editing Turbin schedule files. Opens a web interface where you can approve, edit, or reject generated replies before posting.")
-    parser.add_argument("--port", type=int, default=8765, help="Port number for the review server. Default is 8765 for Turbin mode, 8766 for Eternity mode. Other mode-specific flags will override this default.")
-    parser.add_argument("--post-approved", action="store_true", help="Post all previously approved replies from the schedule. This will automatically post all replies that have been marked as approved in the review interface.")
-    parser.add_argument("--limit", type=int, default=None, help="Limit the number of approved replies to post. Useful for testing or controlling the volume of posts. Set to 0 for no limit.")
-    parser.add_argument("--post-mode", type=str, choices=["turbin", "eternity"], default="turbin", help="Specify which schedule to post from: 'turbin' for Turbin-generated replies or 'eternity' for Eternity-generated replies. Default is 'turbin'.")
-    parser.add_argument("--check", action="store_true", help="Verify that all required API keys and credentials exist in the environment for the specified profile. Checks for authentication tokens and API access.")
-    parser.add_argument("--api-key", type=str, default=None, help="Override the default Gemini API key from environment variables. Provide a specific API key for this session only.")
-    parser.add_argument("--eternity-mode", action="store_true", help="Activate Eternity mode to collect tweets from specific target profiles, analyze them with Gemini AI, and save generated replies for approval. This mode focuses on targeted profile monitoring.")
-    parser.add_argument("--eternity-browser", type=str, default=None, help="Specify a custom browser profile to use for Eternity mode scraping. Useful for different authentication contexts. Defaults to the main profile if not specified.")
-    parser.add_argument("--eternity-max-tweets", type=int, default=17, help="Maximum number of tweets to collect and process in Eternity mode. Set to 0 for no limit. Default is 17 tweets.")
-    parser.add_argument("--clear-eternity", action="store_true", help="Clear all Eternity schedule files and associated media files for the specified profile. This removes all pending replies and media from the Eternity workflow.")
-    parser.add_argument("--eternity-review", action="store_true", help="Start a local web server specifically for reviewing and editing Eternity schedule files. This overrides the general --review flag and uses Eternity-specific settings.")
-    parser.add_argument("--community-scrape", action="store_true", help="Activate community scraping mode to collect tweets from specific X communities. Requires --community-name to be specified.")
-    parser.add_argument("--community-name", type=str, help="Name of the X community to scrape tweets from. This is required when using --community-scrape mode.")
-    parser.add_argument("--max-tweets", type=int, default=1000, help="Maximum number of tweets to scrape in community mode. Set to 0 for no limit. Default is 1000 tweets.")
-    parser.add_argument("--browser-profile", type=str, default=None, help="Browser profile to use for community scraping. Useful for different authentication contexts. Defaults to the main profile if not specified.")
-    parser.add_argument("--suggest-engaging-tweets", action="store_true", help="Analyze scraped community tweets using AI to identify the most engaging content and suggest optimal tweets for interaction. Requires --community-name.")
+
+    # Action Mode
     parser.add_argument("--action-review", action="store_true", help="Activate action mode with integrated review workflow. Generates replies, saves them for approval, and opens a review server for manual approval before posting.")
+    parser.add_argument("--action-port", type=int, default=8765, help="Port number for the action mode review server. Default is 8765. This is separate from the general --port setting.")
+    # Action Mode (Online)
+    parser.add_argument("--run-number", type=int, default=1, help="Specify the run number for the current day. Useful for multiple daily runs (e.g., 1 for first run, 2 for second run). Default is 1.")
+    parser.add_argument("--online", action="store_true", help="Use Google Sheets integration for review and posting in action mode. This enables cloud-based collaboration and review workflows.")
+    # Action Mode (Additional)
+    parser.add_argument("--ignore-video-tweets", action="store_true", help="Skip processing of tweets that contain video content during analysis and reply generation. Useful for focusing on text-based interactions.")
+    # Action Generate & Post later via API
     parser.add_argument("--action-generate", action="store_true", help="Activate action mode to generate replies and save them for approval without opening a review server or posting. Useful for batch generation.")
     parser.add_argument("--post-action-approved", action="store_true", help="Post all approved replies from the action mode schedule. This will post all replies that have been marked as approved in the action mode workflow.")
     parser.add_argument("--post-action-approved-sequential", action="store_true", help="Post all approved replies from the action mode schedule in sequential order. Designed for automated execution workflows where replies should be posted one after another.")
-    parser.add_argument("--online", action="store_true", help="Use Google Sheets integration for review and posting in action mode. This enables cloud-based collaboration and review workflows.")
-    parser.add_argument("--ignore-video-tweets", action="store_true", help="Skip processing of tweets that contain video content during analysis and reply generation. Useful for focusing on text-based interactions.")
-    parser.add_argument("--run-number", type=int, default=1, help="Specify the run number for the current day. Useful for multiple daily runs (e.g., 1 for first run, 2 for second run). Default is 1.")
-    parser.add_argument("--action-port", type=int, default=8765, help="Port number for the action mode review server. Default is 8765. This is separate from the general --port setting.")
+    
+    # Eternity Mode
+    parser.add_argument("--limit", type=int, default=None, help="Limit the number of approved replies to post. Useful for testing or controlling the volume of posts. Set to 0 for no limit.")
+    parser.add_argument("--eternity-mode", action="store_true", help="Activate Eternity mode to collect tweets from specific target profiles, analyze them with Gemini AI, and save generated replies for approval. This mode focuses on targeted profile monitoring.")
+    parser.add_argument("--post-approved", action="store_true", help="Post all previously approved replies from the schedule. This will automatically post all replies that have been marked as approved in the review interface.")
+    parser.add_argument("--clear-eternity", action="store_true", help="Clear all Eternity schedule files and associated media files for the specified profile. This removes all pending replies and media from the Eternity workflow.")
+    parser.add_argument("--eternity-review", action="store_true", help="Start a local web server specifically for reviewing and editing Eternity schedule files. This overrides the general --review flag and uses Eternity-specific settings.")
+    parser.add_argument("--post-mode", type=str, default="eternity", help="Specify the posting mode for approved replies. Options: 'eternity' (default), 'action'.")
+    parser.add_argument("--eternity-browser", type=str, default=None, help="Specify a custom browser profile to use for Eternity mode scraping. Useful for different authentication contexts. Defaults to the main profile if not specified.")
+    parser.add_argument("--eternity-max-tweets", type=int, default=17, help="Maximum number of tweets to collect and process in Eternity mode. Set to 0 for no limit. Default is 17 tweets.")
+    
+    # Posting to a community
     parser.add_argument("--post-to-community", action="store_true", help="Activate mode to post a tweet directly to a specified community. Requires --post-to-community-tweet and --community-name to be specified.")
     parser.add_argument("--post-to-community-tweet", type=str, default=None, help="The exact tweet text to post to the community. This is required when using --post-to-community mode.")
-    parser.add_argument("--post-via-api", action="store_true", help="Use X API to post replies instead of browser automation in action mode. This is faster and more reliable than browser-based posting.")
-    parser.add_argument("--specific-target-profiles", type=str, default=None, help="Target specific profiles for scraping and analysis. Must match a profile name from the SPECIFIC_TARGET_PROFILES configuration.")
-    parser.add_argument("--verbose", action="store_true", help="Enable detailed logging output for debugging and monitoring. Shows comprehensive information about the execution process.")
-    parser.add_argument("--no-headless", action="store_true", help="Disable headless browser mode for debugging and observation. The browser UI will be visible.")
+    # use the --community-name from the community scrape mode
+
+    # Analyze Accounts
     parser.add_argument("--analyze-account", type=str, help="Analyze a specific X account by scraping their tweets and storing them in a Google Sheet. Requires the target profile's username.")
 
-    args = parser.parse_args()
+    # Specific Target Profiles
+    parser.add_argument("--specific-target-profiles", type=str, default=None, help="Target specific profiles for scraping and analysis. Must match a profile name from the SPECIFIC_TARGET_PROFILES configuration.")
 
-    if args.clear:
-        profile = args.profile
-        if profile not in PROFILES:
-            _log(f"Profile '{profile}' not found in PROFILES. Available profiles: {', '.join(PROFILES.keys())}", args.verbose, is_error=True, status=None, api_info=None)
-            _log("Please create a profiles.py file based on profiles.sample.py to define your profiles.", args.verbose, is_error=True, status=None, api_info=None)
-            sys.exit(1)
-        profile_name = PROFILES[profile]['name']
-        with Status(f"[white]Clearing Turbin files for {profile_name}...[/white]", spinner="dots", console=console) as status:
-            deleted = clear_turbin_files(profile_name, status=status)
-            status.stop()
-            _log(f"Done. Deleted items: {deleted}", args.verbose, status=status, api_info=None)
-        return
+    # Community
+    parser.add_argument("--max-tweets", type=int, default=1000, help="Maximum number of tweets to scrape in community mode. Set to 0 for no limit. Default is 1000 tweets.")
+    parser.add_argument("--community-name", type=str, help="Name of the X community to scrape tweets from. This is required when using --community-scrape mode.")
+    parser.add_argument("--browser-profile", type=str, default=None, help="Browser profile to use for community scraping. Useful for different authentication contexts. Defaults to the main profile if not specified.")
+    parser.add_argument("--community-scrape", action="store_true", help="Activate community scraping mode to collect tweets from specific X communities. Requires --community-name to be specified.")
+    parser.add_argument("--suggest-engaging-tweets", action="store_true", help="Analyze scraped community tweets using AI to identify the most engaging content and suggest optimal tweets for interaction. Requires --community-name.")
+
+    # Additional
+    parser.add_argument("--check", action="store_true", help="Verify that all required API keys and credentials exist in the environment for the specified profile. Checks for authentication tokens and API access.")
+    parser.add_argument("--api-key", type=str, default=None, help="Override the default Gemini API key from environment variables. Provide a specific API key for this session only.")
+    parser.add_argument("--verbose", action="store_true", help="Enable detailed logging output for debugging and monitoring. Shows comprehensive information about the execution process.")
+    parser.add_argument("--no-headless", action="store_true", help="Disable headless browser mode for debugging and observation. The browser UI will be visible.")
+    parser.add_argument("--post-via-api", action="store_true", help="Use X API to post replies instead of browser automation in action mode. This is faster and more reliable than browser-based posting.")
+    parser.add_argument("--reply-max-tweets", type=int, default=17, help="Maximum number of tweets to collect and process in Turbin and Action modes. Set to 0 for no limit. Default is 17 tweets.")
+    parser.add_argument("--port", type=int, default=8765, help="Port number for the local web server. Default is 8765.")
+
+    args = parser.parse_args()
 
     if args.clear_eternity:
         profile = args.profile
@@ -127,7 +129,7 @@ def main():
             sys.exit(1)
         profile_name = PROFILES[profile]['name']
         with Status(f"[white]Clearing Eternity files for {profile_name}...[/white]", spinner="dots", console=console) as status:
-            deleted = clear_eternity_files(profile_name, status=status)
+            deleted = clear_eternity_files(profile_name, status=status, verbose=args.verbose)
             status.stop()
             _log(f"Done. Deleted items: {deleted}", args.verbose, status=status, api_info=None)
         return
@@ -140,18 +142,8 @@ def main():
             sys.exit(1)
         profile_name = PROFILES[profile]['name']
         port = args.port if args.port != 8765 else 8766
-        start_eternity_review_server(profile_name, port=port)
-        return
-
-    if args.review:
-        profile = args.profile
-        if profile not in PROFILES:
-            _log(f"Profile '{profile}' not found in PROFILES. Available profiles: {', '.join(PROFILES.keys())}", args.verbose, is_error=True, status=None, api_info=None)
-            _log("Please create a profiles.py file based on profiles.sample.py to define your profiles.", args.verbose, is_error=True, status=None, api_info=None)
-            sys.exit(1)
-        profile_name = PROFILES[profile]['name']
-        
-        serve_turbin_review(profile_name, port=args.port)
+        with Status(f"[white]Starting Eternity Review Server on port {port} for {profile_name}...[/white]", spinner="dots", console=console) as status:
+            start_eternity_review_server(profile_name, port=port, verbose=args.verbose, status=status)
         return
 
     if args.post_approved:
@@ -162,7 +154,7 @@ def main():
             sys.exit(1)
         profile_name = PROFILES[profile]['name']
         with Status(f"[white]Posting approved replies for {profile_name} from {args.post_mode} schedule...[/white]", spinner="dots", console=console) as status:
-            summary = post_approved_replies(profile_name, limit=args.limit, mode=args.post_mode)
+            summary = post_approved_replies(profile_name, limit=args.limit, mode=args.post_mode, verbose=args.verbose)
             status.stop()
             _log(f"Processed: {summary['processed']}, Posted: {summary['posted']}, Failed: {summary['failed']}", args.verbose, status=status, api_info=None)
         return
@@ -197,12 +189,7 @@ def main():
             sys.exit(1)
 
         with Status(f"[white]Scraping community '{args.community_name}' for profile {profile_name}...[/white]", spinner="dots", console=console) as status:
-            scraped_tweets = scrape_community_tweets(
-                community_name=args.community_name,
-                profile_name=profile_name,
-                browser_profile=args.browser_profile,
-                max_tweets=args.max_tweets
-            )
+            scraped_tweets = scrape_community_tweets(community_name=args.community_name, profile_name=profile_name, browser_profile=args.browser_profile, max_tweets=args.max_tweets, headless=not args.no_headless, status=status, verbose=args.verbose)
             status.stop()
             _log(f"Community scraping complete. Scraped {len(scraped_tweets)} tweets.", args.verbose, status=status, api_info=None)
         return
@@ -221,11 +208,7 @@ def main():
             sys.exit(1)
         
         with Status(f"[white]Analyzing tweets from '{args.community_name}' for engagement for profile {profile_name}...[/white]", spinner="dots", console=console) as status:
-            suggestions = analyze_community_tweets_for_engagement(
-                profile_key=args.profile,
-                community_name=args.community_name,
-                api_key=args.api_key
-            )
+            suggestions = analyze_community_tweets_for_engagement(profile_key=args.profile, community_name=args.community_name, api_key=args.api_key, verbose=args.verbose)
             status.stop()
 
             if suggestions:
@@ -247,12 +230,12 @@ def main():
         custom_prompt = PROFILES[profile]['prompt']
 
         with Status(f"[white]Running Eternity Mode: Scraping and analyzing tweets for {profile_name}...[/white]", spinner="dots", console=console) as status:
-            results = run_eternity_mode(profile_name, custom_prompt, args.eternity_browser, max_tweets=args.eternity_max_tweets, status=status)
+            results = run_eternity_mode(profile_name, custom_prompt, args.eternity_browser, max_tweets=args.eternity_max_tweets, status=status, headless=not args.no_headless, verbose=args.verbose, ignore_video_tweets=args.ignore_video_tweets)
             status.stop()
             _log("Eternity Mode Summary:", args.verbose, status=status, api_info=None)
-            _log(f"  Processed: {len(results)}", args.verbose, status=status, api_info=None)
+            _log(f"Processed: {len(results)}", args.verbose, status=status, api_info=None)
             ready = sum(1 for r in results if r.get('status') == 'ready_for_approval')
-            _log(f"  Ready for approval: {ready}", args.verbose, status=status, api_info=None)
+            _log(f"Ready for approval: {ready}", args.verbose, status=status, api_info=None)
             if results:
                 _log("  Sample:", args.verbose, status=status, api_info=None)
                 sample = results[0]
@@ -277,7 +260,9 @@ def main():
             driver, setup_messages = setup_driver(user_data_dir, profile=profile_name, headless=not args.no_headless)
             for msg in setup_messages:
                 _log(msg, args.verbose, status=None, api_info=None)
-            analyze_profile(driver, profile_name, target_profile_name, verbose=args.verbose)
+            with Status(f"[white]Analyzing profile {target_profile_name}...[/white]", spinner="dots", console=console) as status:
+                analyze_profile(driver, profile_name, target_profile_name, verbose=args.verbose, status=status)
+            status.stop()
         except Exception as e:
             _log(f"Error during profile analysis: {e}", args.verbose, is_error=True, status=None, api_info=None)
         finally:
@@ -296,11 +281,11 @@ def main():
         custom_prompt = PROFILES[profile]['prompt']
 
         with Status(f"[white]Running Action Mode Generation: Scraping and analyzing tweets for {profile_name}...[/white]", spinner="dots", console=console) as status:
-            driver = run_action_mode_online(profile_name, custom_prompt, max_tweets=17, status=status, api_key=args.api_key, ignore_video_tweets=args.ignore_video_tweets, run_number=args.run_number, community_name=args.community_name, post_via_api=args.post_via_api, verbose=args.verbose)
+            driver = run_action_mode_online(profile_name, custom_prompt, max_tweets=args.reply_max_tweets, status=status, api_key=args.api_key, ignore_video_tweets=args.ignore_video_tweets, run_number=args.run_number, community_name=args.community_name, post_via_api=args.post_via_api, verbose=args.verbose, headless=not args.no_headless)
             status.stop()
             if driver:
                 driver.quit()
-            _log(f"Action mode generation finished for {profile_name}. Replies saved to Google Sheet: {profile_name}_online_replies", args.verbose, status=None, api_info=None)
+            _log(f"Action mode generation finished for {profile_name}. Replies saved to Google Sheet: {profile_name}_online_replies", verbose=args.verbose, status=None, api_info=None)
         return
 
     if args.action_review:
@@ -336,13 +321,13 @@ def main():
 
         with Status(f"[white]Running Action Mode with review: Scraping and analyzing tweets for {profile_name}...[/white]", spinner="dots", console=console) as status:
             if args.online:
-                driver = run_action_mode_online(profile_name, custom_prompt, max_tweets=17, status=status, api_key=args.api_key, ignore_video_tweets=args.ignore_video_tweets, run_number=args.run_number, community_name=args.community_name, post_via_api=args.post_via_api, specific_search_url=specific_search_url, target_profile_name=target_profile_name, verbose=args.verbose)
+                driver = run_action_mode_online(profile_name, custom_prompt, max_tweets=args.reply_max_tweets, status=status, api_key=args.api_key, ignore_video_tweets=args.ignore_video_tweets, run_number=args.run_number, community_name=args.community_name, post_via_api=args.post_via_api, specific_search_url=specific_search_url, target_profile_name=target_profile_name, verbose=args.verbose, headless=not args.no_headless)
                 status.stop()
                 _log(f"Action mode with online review finished. Review generated replies in Google Sheet: {profile_name}_online_replies", args.verbose, status=None, api_info=None)
                 _log("Press Enter here when you are done reviewing and want to post approved replies.", args.verbose, status=None, api_info=None)
                 input()
             else:
-                driver = run_action_mode_with_review(profile_name, custom_prompt, max_tweets=17, status=status, api_key=args.api_key, ignore_video_tweets=args.ignore_video_tweets, run_number=args.run_number, community_name=args.community_name, post_via_api=args.post_via_api, verbose=args.verbose, headless=not args.no_headless)
+                driver = run_action_mode_with_review(profile_name, custom_prompt, max_tweets=args.reply_max_tweets, status=status, api_key=args.api_key, ignore_video_tweets=args.ignore_video_tweets, run_number=args.run_number, community_name=args.community_name, post_via_api=args.post_via_api, verbose=args.verbose, headless=not args.no_headless)
                 status.stop()
                 
         if driver:
@@ -465,7 +450,7 @@ def main():
             sys.exit(1)
 
         with Status(f"[white]Posting tweet to community '{community_name}' for profile {profile_name}...[/white]", spinner="dots", console=console) as status:
-            success = post_to_community_tweet(driver, tweet_text, community_name, status=status)
+            success = post_to_community_tweet(driver, tweet_text, community_name, status=status, verbose=args.verbose)
             status.stop()
             if success:
                 _log(f"Successfully posted tweet to community '{community_name}'.", args.verbose, status=status, api_info=None)
@@ -496,11 +481,7 @@ def main():
         custom_prompt = PROFILES[login_profile_name]['prompt']
         
         with Status(f"[white]Running Action Mode for specific profiles: Scraping and analyzing tweets for {profile_names_for_query} using login profile {login_profile_name}...[/white]", spinner="dots", console=console) as status:
-            driver = run_action_mode_online(
-                login_profile_name, custom_prompt, max_tweets=17, status=status,
-                api_key=args.api_key, ignore_video_tweets=args.ignore_video_tweets,
-                run_number=args.run_number, specific_search_url=search_url, target_profile_name=profile_key, verbose=args.verbose
-            )
+            driver = run_action_mode_online(login_profile_name, custom_prompt, max_tweets=args.reply_max_tweets, status=status, api_key=args.api_key, ignore_video_tweets=args.ignore_video_tweets, run_number=args.run_number, specific_search_url=search_url, target_profile_name=profile_key, verbose=args.verbose, headless=not args.no_headless)
             status.stop()
             if driver:
                 driver.quit()
@@ -518,7 +499,7 @@ def main():
         custom_prompt = PROFILES[profile]['prompt']
         
         with Status(f'[white]Running Action Mode: Gemini reply to tweets for {profile_name}...[/white]', spinner="dots", console=console) as status:
-            result = run_action_mode(profile_name, custom_prompt, status=status, ignore_video_tweets=args.ignore_video_tweets, run_number=args.run_number, community_name=args.community_name, post_via_api=args.post_via_api, verbose=args.verbose, headless=not args.no_headless)
+            result = run_action_mode(profile_name, custom_prompt, max_tweets=args.reply_max_tweets, status=status, ignore_video_tweets=args.ignore_video_tweets, run_number=args.run_number, community_name=args.community_name, post_via_api=args.post_via_api, verbose=args.verbose, headless=not args.no_headless)
             status.stop()
             _log("Action Mode Results:", args.verbose, status=status, api_info=None)
             for res in result:
@@ -526,30 +507,6 @@ def main():
                 _log(f"Reply: {res.get('generated_reply', 'N/A')[:70]}...", args.verbose, status=status, api_info=None)
                 _log(f"Status: {res.get('status', 'N/A')}", args.verbose, status=status, api_info=None)
                 _log("\n", args.verbose, status=status, api_info=None)
-
-    elif args.turbin_mode:
-        profile = args.profile
-        if profile not in PROFILES:
-            _log(f"Profile '{profile}' not found in PROFILES. Available profiles: {', '.join(PROFILES.keys())}", args.verbose, is_error=True, status=None, api_info=None)
-            _log("Please create a profiles.py file based on profiles.sample.py to define your profiles.", args.verbose, is_error=True, status=None, api_info=None)
-            sys.exit(1)
-
-        profile_name = PROFILES[profile]['name']
-        custom_prompt = PROFILES[profile]['prompt']
-
-        with Status(f"[white]Running Turbin Mode: Collect + Analyze 10 tweets for {profile_name}...[/white]", spinner="dots", console=console) as status:
-            results = run_turbin_mode(profile_name, custom_prompt, max_tweets=17, status=status, api_key=args.api_key)
-            status.stop()
-            _log("Turbin Mode Summary:", args.verbose, status=status, api_info=None)
-            _log(f"  Processed: {len(results)}", args.verbose, status=status, api_info=None)
-            ready = sum(1 for r in results if r.get('status') == 'ready_for_approval')
-            _log(f"  Ready for approval: {ready}", args.verbose, status=status, api_info=None)
-            if results:
-                _log("  Sample:", args.verbose, status=status, api_info=None)
-                sample = results[0]
-                _log(f"Tweet: {sample.get('tweet_text', '')[:70]}...", args.verbose, status=status, api_info=None)
-                _log(f"Reply: {sample.get('generated_reply', '')[:70]}...", args.verbose, status=status, api_info=None)
-                _log(f"Media: {', '.join(sample.get('media_files', []))}", args.verbose, status=status, api_info=None)
 
     else:
         parser.print_help()

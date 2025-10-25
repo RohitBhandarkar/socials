@@ -9,6 +9,7 @@ from selenium.common.exceptions import TimeoutException
 from selenium.webdriver.support.ui import WebDriverWait
 from services.support.web_driver_handler import setup_driver
 from selenium.webdriver.support import expected_conditions as EC
+from services.support.path_config import get_browser_data_dir, get_downloads_dir
 
 console = Console()
 
@@ -26,7 +27,7 @@ def _log(message: str, verbose: bool, is_error: bool = False):
         console.print(f"[video_download.py] {timestamp}|[{color}]{log_message}[/{color}]")
 
 def download_twitter_videos(tweet_urls, profile_name="Default", headless=True, verbose: bool = False):
-    user_data_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'browser-data', profile_name))
+    user_data_dir = get_browser_data_dir(profile_name)
     driver, setup_messages = setup_driver(user_data_dir, profile=profile_name, headless=headless, verbose=verbose)
     for msg in setup_messages:
         _log(msg, verbose)
@@ -35,7 +36,7 @@ def download_twitter_videos(tweet_urls, profile_name="Default", headless=True, v
     time.sleep(10)
     original_window = driver.current_window_handle
     current_tabs = []
-    download_dir = '/home/atg/Documents/socials/videos' 
+    download_dir = os.path.join(get_downloads_dir(), 'videos')
     
     os.makedirs(download_dir, exist_ok=True)
 

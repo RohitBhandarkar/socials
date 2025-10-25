@@ -5,10 +5,9 @@
 # Profile operations
 # source venv/bin/activate && PYTHONPATH=. python services/platform/x/replies.py --profile {profile_name} --check --verbose
 # source venv/bin/activate && PYTHONPATH=. python services/platform/x/replies.py --profile {profile_name} --clear --verbose
-# source venv/bin/activate && PYTHONPATH=. python services/platform/x/replies.py --profile {profile_name} --clear-eternity --verbose
 
 # Turbin mode
-# source venv/bin/activate && PYTHONPATH=. python services/platform/x/replies.py --profile {profile_name} --turbin-mode --verbose --api-key {gemini_api_key}
+# source venv/bin/activate && PYTHONPATH=. python services/platform/x/replies.py --profile {profile_name} --turbin-mode --verbose
 # source venv/bin/activate && PYTHONPATH=. python services/platform/x/replies.py --profile {profile_name} --review --port {port_number} --verbose
 # source venv/bin/activate && PYTHONPATH=. python services/platform/x/replies.py --profile {profile_name} --post-approved --post-mode turbin --limit {number} --verbose
 
@@ -30,6 +29,9 @@
 # source venv/bin/activate && PYTHONPATH=. python services/platform/x/replies.py --profile {profile_name} --post-action-approved --verbose
 # source venv/bin/activate && PYTHONPATH=. python services/platform/x/replies.py --profile {profile_name} --post-action-approved-sequential --verbose --run-number {number} --post-via-api
 # source venv/bin/activate && PYTHONPATH=. python services/platform/x/replies.py --profile {profile_name} --specific-target-profiles "{profile_key}" --verbose --api-key {gemini_api_key} --run-number {number} --ignore-video-tweets
+
+# Directory Initialization
+# source venv/bin/activate && PYTHONPATH=. python -c "from services.support.path_config import initialize_directories; initialize_directories()" --verbose
 
 # services/platform/x/scheduler.py commands
 # Profile operations

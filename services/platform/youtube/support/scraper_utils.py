@@ -8,6 +8,7 @@ from rich.console import Console
 from selenium.webdriver.common.by import By
 from typing import List, Dict, Any, Optional
 from services.support.web_driver_handler import setup_driver
+from services.support.path_config import get_browser_data_dir
 
 console = Console()
 
@@ -169,7 +170,7 @@ def _scroll_page(driver, verbose: bool = False):
 
 
 def run_youtube_scraper(profile_name: str, search_query: Optional[str] = None, max_videos: int = 50, weekly_filter: bool = False, today_filter: bool = False, status=None, verbose: bool = False, headless: bool = True) -> List[Dict[str, Any]]:
-    user_data_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'browser-data', profile_name))
+    user_data_dir = get_browser_data_dir(profile_name)
     
     try:
         driver, setup_messages = setup_driver(user_data_dir, profile=profile_name, headless=headless)

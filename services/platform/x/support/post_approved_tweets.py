@@ -5,7 +5,7 @@ import json
 from datetime import datetime
 from rich.console import Console
 from typing import Dict, Any, List, Optional, Tuple
-from services.support.path_config import get_eternity_schedule_file_path, get_action_schedule_file_path
+from services.support.path_config import get_eternity_schedule_file_path
 
 console = Console()
 
@@ -23,27 +23,10 @@ def _log(message: str, verbose: bool, is_error: bool = False):
         console.print(f"[post_approved_tweets.py] {timestamp}|[{color}]{log_message}[/{color}]")
 
 
-def _schedule_paths(profile_name: str) -> Tuple[str, str]:
-    schedule_path = get_action_schedule_file_path(profile_name)
-    schedule_folder = os.path.dirname(schedule_path)
-    return schedule_folder, schedule_path
-
-
 def _eternity_schedule_paths(profile_name: str) -> Tuple[str, str]:
     schedule_path = get_eternity_schedule_file_path(profile_name)
     schedule_folder = os.path.dirname(schedule_path)
     return schedule_folder, schedule_path
-
-
-def _load_schedule(profile_name: str) -> List[Dict[str, Any]]:
-    _, schedule_path = _schedule_paths(profile_name)
-    if not os.path.exists(schedule_path):
-        return []
-    with open(schedule_path, 'r') as f:
-        try:
-            return json.load(f)
-        except Exception:
-            return []
 
 
 def _load_eternity_schedule(profile_name: str) -> List[Dict[str, Any]]:
@@ -55,12 +38,6 @@ def _load_eternity_schedule(profile_name: str) -> List[Dict[str, Any]]:
             return json.load(f)
         except Exception:
             return []
-
-
-def _save_schedule(profile_name: str, items: List[Dict[str, Any]]) -> None:
-    _, schedule_path = _schedule_paths(profile_name)
-    with open(schedule_path, 'w') as f:
-        json.dump(items, f, indent=2)
 
 
 def _save_eternity_schedule(profile_name: str, items: List[Dict[str, Any]]) -> None:
@@ -125,11 +102,8 @@ def post_tweet_reply(tweet_id: str, reply_text: str, profile_name: Optional[str]
         return False
 
 
-def post_approved_replies(profile_name: str, limit: Optional[int] = None, mode: str = "turbin", verbose: bool = False) -> Dict[str, Any]:
-    if mode == "eternity":
-        items = _load_eternity_schedule(profile_name)
-    else:
-        items = _load_schedule(profile_name)
+def post_approved_replies(profile_name: str, limit: Optional[int] = None, mode: str = "eternity", verbose: bool = False) -> Dict[str, Any]:
+    items = _load_eternity_schedule(profile_name)
     if not items:
         return {"processed": 0, "posted": 0, "failed": 0}
 
@@ -155,10 +129,7 @@ def post_approved_replies(profile_name: str, limit: Optional[int] = None, mode: 
         else:
             failed += 1
 
-    if mode == "eternity":
-        _save_eternity_schedule(profile_name, items)
-    else:
-        _save_schedule(profile_name, items)
+    _save_eternity_schedule(profile_name, items)
 
     return {"processed": len(approved), "posted": posted, "failed": failed} 
 
