@@ -16,7 +16,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from datetime import datetime, timedelta
 from services.platform.x.support.action import setup_driver
 from services.platform.x.support.profile_analyzer import analyze_profile
-from services.platform.x.support.post_to_community import post_to_community_tweet
+from services.platform.x.support.post_to_community import post_to_community_tweet, post_regular_tweet
 from services.platform.x.support.eternity_server import start_eternity_review_server 
 from services.support.path_config import get_browser_data_dir, initialize_directories
 from services.platform.x.support.action_server import start_action_mode_review_server
@@ -96,6 +96,9 @@ def main():
     parser.add_argument("--post-to-community", action="store_true", help="Activate mode to post a tweet directly to a specified community. Requires --post-to-community-tweet and --community-name to be specified.")
     parser.add_argument("--post-to-community-tweet", type=str, default=None, help="The exact tweet text to post to the community. This is required when using --post-to-community mode.")
     # use the --community-name from the community scrape mode
+    
+    # Normal posting
+    parser.add_argument("--post-tweet", type=str, default=None, help="The exact tweet text to post as a regular tweet. Use this instead of --post-to-community-tweet when not posting to a community.")
 
     # Analyze Accounts
     parser.add_argument("--analyze-account", type=str, help="Analyze a specific X account by scraping their tweets and storing them in a Google Sheet. Requires the target profile's username.")
@@ -456,6 +459,36 @@ def main():
                 _log(f"Successfully posted tweet to community '{community_name}'.", args.verbose, status=status, api_info=None)
             else:
                 _log(f"Failed to post tweet to community '{community_name}'.", args.verbose, is_error=True, status=status, api_info=None)
+        driver.quit()
+        return
+
+    if args.post_tweet:
+        profile = args.profile
+        if profile not in PROFILES:
+            _log(f"Profile '{profile}' not found in PROFILES. Available profiles: {', '.join(PROFILES.keys())}", args.verbose, is_error=True, status=None, api_info=None)
+            _log("Please create a profiles.py file based on profiles.sample.py to define your profiles.", args.verbose, is_error=True, status=None, api_info=None)
+            sys.exit(1)
+        
+        profile_name = PROFILES[profile]['name']
+        tweet_text = args.post_tweet
+
+        user_data_dir = get_browser_data_dir(profile_name)
+
+        try:
+            driver, setup_messages = setup_driver(user_data_dir, profile=profile_name, headless=False)
+            for msg in setup_messages:
+                _log(msg, args.verbose, status=None, api_info=None)
+        except Exception as e:
+            _log(f"Error setting up WebDriver: {e}", args.verbose, is_error=True, status=None, api_info=None)
+            sys.exit(1)
+
+        with Status(f"[white]Posting regular tweet for profile {profile_name}...[/white]", spinner="dots", console=console) as status:
+            success = post_regular_tweet(driver, tweet_text, status=status, verbose=args.verbose)
+            status.stop()
+            if success:
+                _log(f"Successfully posted regular tweet.", args.verbose, status=status, api_info=None)
+            else:
+                _log(f"Failed to post regular tweet.", args.verbose, is_error=True, status=status, api_info=None)
         driver.quit()
         return
 

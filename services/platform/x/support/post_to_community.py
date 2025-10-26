@@ -79,3 +79,40 @@ def post_to_community_tweet(driver, tweet_text, community_name, status=None, ver
     except Exception as e:
         _log(f"Failed to post tweet to community: {e}", verbose, is_error=True, status=status)
         return False
+
+def post_regular_tweet(driver, tweet_text, status=None, verbose: bool = False):
+    try:
+        if status:
+            _log("Navigating to tweet compose page...", verbose, status=status)
+        else:
+            _log("Navigating to tweet compose page...", verbose, status=status)
+        driver.get('https://x.com/compose/tweet')
+        time.sleep(3)
+
+        tweet_input = WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, '[data-testid="tweetTextarea_0"]'))
+        )
+        tweet_input.clear()
+        tweet_input.send_keys(tweet_text)
+        time.sleep(2)
+        
+        if status:
+            _log("Clicking post button...", verbose, status=status)
+        else:
+            _log("Clicking post button...", verbose, status=status)
+        post_button = WebDriverWait(driver, 10).until(
+            EC.element_to_be_clickable((By.CSS_SELECTOR, '[data-testid="tweetButton"]'))
+        )
+        post_button.click()
+        time.sleep(3)
+
+        driver.get('https://x.com')
+        time.sleep(3)
+        if status:
+            _log(f"Successfully posted regular tweet.", verbose, status=status)
+        else:
+            _log(f"Successfully posted regular tweet.", verbose, status=status)
+        return True
+    except Exception as e:
+        _log(f"Failed to post regular tweet: {e}", verbose, is_error=True, status=status)
+        return False

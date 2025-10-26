@@ -16,6 +16,7 @@ from services.platform.x.support.generate_sample_posts import generate_sample_po
 from services.platform.x.support.generate_captions import generate_captions_for_schedule
 from services.platform.x.support.process_scheduled_tweets import process_scheduled_tweets
 from services.platform.x.support.move_tomorrow_schedules import move_tomorrows_from_schedule2
+from services.platform.x.support.post_watcher import run_watcher
 
 console = Console()
 
@@ -97,11 +98,22 @@ def main():
     parser.add_argument("--verbose", action="store_true", help="Enable detailed logging output for debugging and monitoring. Shows comprehensive information about the execution process.")
     parser.add_argument("--no-headless", action="store_true", help="Disable headless browser mode for debugging and observation. The browser UI will be visible.")
 
+    # Post Watcher
+    parser.add_argument("--post-watch", action="store_true", help="Continuously watch and post scheduled tweets/community posts.")
+    parser.add_argument("--post-watch-profiles", type=str, help="Comma-separated profile keys for post watcher.")
+    parser.add_argument("--post-watch-interval", type=int, default=60, help="Polling interval in seconds for post watcher (default: 60).")
+    parser.add_argument("--post-watch-run-once", action="store_true", help="Run post watcher a single scan and exit.")
+
     args = parser.parse_args()
 
     if args.profile not in PROFILES:
         _log(f"Profile '{args.profile}' not found in PROFILES. Available profiles: {', '.join(PROFILES.keys())}", args.verbose, is_error=True, status=None, api_info=None)
         _log("Please create a profiles.py file based on profiles.sample.py to define your profiles.", args.verbose, is_error=True, status=None, api_info=None)
+        return
+
+    if args.post_watch:
+        profile_keys = [p.strip() for p in (args.post_watch_profiles or args.profile).split(',') if p.strip()]
+        run_watcher(profile_keys=profile_keys, interval_seconds=args.post_watch_interval, run_once=args.post_watch_run_once, verbose=args.verbose)
         return
 
     if getattr(args, 'sched_tom', False) and not args.process_tweets and not args.display_tweets and not args.generate_sample and not args.generate_captions and not args.clear_media:
