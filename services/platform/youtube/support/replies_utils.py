@@ -4,7 +4,6 @@ import time
 import json
 import httplib2
 import subprocess
-import google.generativeai as genai
 
 from datetime import datetime
 from rich.status import Status
@@ -16,8 +15,12 @@ from googleapiclient.discovery import build
 from selenium.webdriver.common.by import By
 from typing import Optional, List, Dict, Any
 from googleapiclient.errors import HttpError
+from services.support.api_key_pool import APIKeyPool
+from services.support.rate_limiter import RateLimiter
 from selenium.webdriver.support.ui import WebDriverWait
 from oauth2client.client import flow_from_clientsecrets
+from services.support.gemini_util import generate_gemini
+from services.support.api_call_tracker import APICallTracker
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
 from services.support.path_config import get_youtube_schedule_videos_dir, get_youtube_shorts_dir, get_youtube_replies_for_review_dir
@@ -91,23 +94,9 @@ def get_authenticated_youtube_service(profile_name="Default", verbose: bool = Fa
 
     return build(YOUTUBE_API_SERVICE_NAME, YOUTUBE_API_VERSION, http=credentials.authorize(httplib2.Http()))
 
-def _init_gemini_pro_model(api_key=None):
-    if not api_key:
-        api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key:
-        raise ValueError("No Gemini API key found. Set GEMINI_API_KEY environment variable or pass via argument.")
-    genai.configure(api_key=api_key)
-    return genai.GenerativeModel("gemini-2.5-flash")
-
-def scrape_youtube_shorts_comments(
-    profile_name: str,
-    driver: webdriver.Chrome,
-    max_comments: int = 50,
-    status: Status = None,
-    verbose: bool = False
-):
+def scrape_youtube_shorts_comments(profile_name: str, driver: webdriver.Chrome, max_comments: int = 50, status: Status = None, verbose: bool = False):
     try:
-        comment_button_xpath = '//div[@id="comments-button"]//button'
+        comment_button_xpath = '//button[contains(@aria-label, "comments")]'
         try:
             WebDriverWait(driver, 10).until(
                 EC.element_to_be_clickable((By.XPATH, comment_button_xpath))
@@ -188,7 +177,7 @@ import subprocess
 
 def move_to_next_short(driver, verbose: bool = False) -> bool:
     try:
-        next_button_xpath = '//button[contains(@aria-label, "Next video") and .//div[contains(@class, "yt-spec-touch-feedback-shape--touch-response")]]'
+        next_button_xpath = '//button[@aria-label="Next video"]'
         WebDriverWait(driver, 5).until(
             EC.element_to_be_clickable((By.XPATH, next_button_xpath))
         ).click()
@@ -241,8 +230,7 @@ def download_youtube_short(video_url: str, profile_name: str, status: Status = N
         _log(f"An unexpected error occurred during video download: {e}", verbose, is_error=True)
         return None
 
-def generate_youtube_replies(profile_name: str, comments_data: list, video_context: str, video_path: str, api_key: str = None, verbose: bool = False):
-    model = _init_gemini_pro_model(api_key)
+def generate_youtube_replies(profile_name: str, comments_data: list, video_context: str, video_path: str, api_key_pool: APIKeyPool, api_call_tracker: APICallTracker, rate_limiter: RateLimiter, verbose: bool = False):
     top_n_comments = comments_data[:10]
 
     comments_json = json.dumps(top_n_comments, indent=2)
@@ -255,46 +243,16 @@ def generate_youtube_replies(profile_name: str, comments_data: list, video_conte
     Generate a single, highly engaging, and concise reply that resonates with the overall sentiment of these comments and the video content. The reply should be creative and encourage further interaction. Return only the reply text.
     """
 
-    uploaded_file = None
-    try:
-        if video_path:
-            base_filename = os.path.basename(video_path)
-            sanitized_display_name = re.sub(r'\s*\(.*?\)|\s*\[.*?\]', '', base_filename).strip()
-            _log(f"[Gemini] Uploading media: {video_path}", verbose)
-            uploaded_file = genai.upload_file(path=video_path, display_name=sanitized_display_name)
-            
-            timeout_seconds = 600
-            start_time = time.time()
-            while time.time() - start_time < timeout_seconds:
-                file_status = genai.get_file(uploaded_file.name)
-                if file_status.state.name == "ACTIVE":
-                    _log(f"[Gemini] File {uploaded_file.display_name} ({file_status.name}) is now ACTIVE.", verbose)
-                    break
-                elif file_status.state == "FAILED":
-                    _log(f"Gemini file upload failed for {uploaded_file.display_name} ({file_status.name}).", verbose, is_error=True)
-                    return None
-                _log(f"[Gemini] Waiting for file {uploaded_file.display_name} ({file_status.state.name}) to become ACTIVE (current state: {file_status.state})... This can take several minutes for large videos.", verbose)
-                time.sleep(5)
-            else:
-                _log(f"Gemini file {uploaded_file.display_name} ({uploaded_file.name}) did not become ACTIVE within {timeout_seconds} seconds. Aborting content generation.", verbose, is_error=True)
-                return None
-
-        content = [prompt]
-        if uploaded_file:
-            content.append(uploaded_file)
-
-        _log(f"[Gemini] Generating content for {uploaded_file.display_name if uploaded_file else 'text-only'}", verbose)
-        response = model.generate_content(content)
-        
-        generated_reply = response.text
-        return generated_reply
-    except Exception as e:
-        _log(f"Error generating reply: {e}", verbose, is_error=True)
-        return f"Error generating reply: {e}"
-    finally:
-        if uploaded_file:
-            genai.delete_file(uploaded_file.name)
-            _log(f"[Gemini] Deleted uploaded file: {uploaded_file.display_name}", verbose)
+    generated_reply = generate_gemini(
+        media_path=video_path,
+        api_key_pool=api_key_pool,
+        api_call_tracker=api_call_tracker,
+        rate_limiter=rate_limiter,
+        prompt_text=prompt,
+        model_name='gemini-2.5-flash',
+        verbose=verbose
+    )
+    return generated_reply
 
 def post_youtube_reply(driver, comment_id: str, reply_text: str, status: Status, verbose: bool = False):
     try:

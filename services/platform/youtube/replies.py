@@ -11,6 +11,9 @@ from dotenv import load_dotenv
 from rich.status import Status
 from rich.console import Console
 from typing import Optional, Dict, Any
+from services.support.api_key_pool import APIKeyPool
+from services.support.rate_limiter import RateLimiter
+from services.support.api_call_tracker import APICallTracker
 from services.support.web_driver_handler import setup_driver
 from services.support.path_config import get_browser_data_dir, get_youtube_profile_dir
 from services.platform.youtube.support.review_server import start_youtube_review_server
@@ -56,16 +59,25 @@ def _log(message: str, verbose: bool, status=None, is_error: bool = False, api_i
 def main():
     load_dotenv()
     parser = argparse.ArgumentParser(description="YouTube Replies CLI Tool")
+    
+    # profile
     parser.add_argument("--profile", type=str, default="Default", help="Profile name to use.")
+    
+    # scrape & reply
     parser.add_argument("--scrape-and-reply", action="store_true", help="Scrape comments from YouTube Shorts and generate replies.")
     parser.add_argument("--max-comments", type=int, default=50, help="Maximum number of comments to scrape (default: 50).")
-    parser.add_argument("--suggest-engaging-comments", action="store_true", help="Analyze scraped comments for engagement and suggest best replies.")
-    parser.add_argument("--gemini-api-key", type=str, help="Gemini API key for generating replies.")
     parser.add_argument("--number-of-shorts", type=int, default=1, help="Number of YouTube Shorts to process (default: 1).")
-    parser.add_argument("--account", type=str, default="Default", help="YouTube account name from schedule-videos directory.")
-    parser.add_argument("--method", type=str, choices=["api", "direct"], default="api", help="Method to post replies: 'api' for YouTube Data API, 'direct' for Selenium automation (default: api).")
+
+    # review comments
     parser.add_argument("--review", action="store_true", help="Start a local review server for YouTube reply schedules.")
+
+    # post approved comments
+    parser.add_argument("--method", type=str, choices=["api", "direct"], default="api", help="Method to post replies: 'api' for YouTube Data API, 'direct' for Selenium automation (default: api).")
     parser.add_argument("--post-approved", action="store_true", help="Post all approved replies for the selected profile.")
+
+    # additional
+    parser.add_argument("--gemini-api-key", type=str, help="Gemini API key for generating replies.")
+    parser.add_argument("--account", type=str, default="Default", help="YouTube account name from schedule-videos directory.")
     parser.add_argument("--port", type=int, default=8767, help="Port for review server (default: 8767).")
     parser.add_argument("--clear", action="store_true", help="Clear all generated files for the profile (downloaded videos, review JSONs). ")
     parser.add_argument("--verbose", action="store_true", help="Enable detailed logging output for debugging and monitoring. Shows comprehensive information about the execution process.")
@@ -77,6 +89,10 @@ def main():
         _log(f"Profile '{args.profile}' not found in PROFILES. Available profiles: {', '.join(PROFILES.keys())}", args.verbose, is_error=True, status=None, api_info=None)
         _log("Please create a profiles.py file based on profiles.sample.py to define your profiles.", args.verbose, is_error=True, status=None, api_info=None)
         sys.exit(1)
+    
+    api_key_pool = APIKeyPool(api_keys_string=args.gemini_api_key, verbose=args.verbose)
+    api_call_tracker = APICallTracker()
+    rate_limiter = RateLimiter(verbose=args.verbose)
 
     if args.scrape_and_reply:
         profile_name = args.profile
@@ -93,7 +109,7 @@ def main():
             status.stop()
 
             if not driver:
-                console.print("[bold red]WebDriver could not be initialized. Aborting.[/bold red]")
+                _log("WebDriver could not be initialized. Aborting.", args.verbose, is_error=True)
                 sys.exit(1) 
 
             with Status("[white]Navigating to YouTube Shorts...[/white]", spinner="dots", console=console) as status:
@@ -103,92 +119,73 @@ def main():
 
             for i in range(args.number_of_shorts):
                 video_path = None
-                console.print(f"[bold green]--- Processing Short {i+1}/{args.number_of_shorts} ---[/bold green]")
+                _log(f"--- Processing Short {i+1}/{args.number_of_shorts} ---", args.verbose)
                 
                 with Status(f"[white]Running YouTube Replies: Scraping comments for {profile_name}...[/white]", spinner="dots", console=console) as status:
-                    scraped_comments, _, video_url = scrape_youtube_shorts_comments(
-                        profile_name=profile_name,
-                        driver=driver,
-                        max_comments=args.max_comments,
-                        status=status,
-                        verbose=args.verbose
-                    )
+                    scraped_comments, _, video_url = scrape_youtube_shorts_comments(profile_name=profile_name, driver=driver, max_comments=args.max_comments, status=status, verbose=args.verbose)
                 status.stop()
 
                 if video_url and scraped_comments:
-                    console.print(f"[white]Scraped {len(scraped_comments)} comments from {video_url}.[/white]")
+                    _log(f"Scraped {len(scraped_comments)} comments from {video_url}.", args.verbose)
                     
                     with Status("[white]Downloading video...[/white]", spinner="dots", console=console) as status:
                         video_path = download_youtube_short(video_url, profile_name, status, verbose=args.verbose)
                     status.stop()
 
                     if not video_path:
-                        console.print("[bold red]Failed to download video. Cannot generate reply.[/bold red]")
+                        _log("Failed to download video. Cannot generate reply.", args.verbose, is_error=True)
                         if i < args.number_of_shorts - 1:
                             if not move_to_next_short(driver, verbose=args.verbose):
-                                console.print("[yellow]Could not move to the next short. Ending process.[/yellow]")
+                                _log("Could not move to the next short. Ending process.", args.verbose, is_error=True)
                                 break
                         continue
 
                     video_context = "The video is a short, engaging clip. Focus replies on humor and positivity."
                     
                     with Status("[white]Generating reply...[/white]", spinner="dots", console=console) as status:
-                        generated_reply = generate_youtube_replies(
-                            profile_name=profile_name,
-                            comments_data=scraped_comments,
-                            video_context=video_context,
-                            video_path=video_path,
-                            api_key=args.gemini_api_key,
-                            verbose=args.verbose
-                        )
+                        generated_reply = generate_youtube_replies(profile_name=profile_name, comments_data=scraped_comments, video_context=video_context, video_path=video_path, api_key_pool=api_key_pool, api_call_tracker=api_call_tracker, rate_limiter=rate_limiter, verbose=args.verbose)
                         status.stop()
                         
                         if generated_reply and not generated_reply.startswith("Error"):
-                            console.print("[white]Generated Reply:[/white]")
-                            console.print(f"[white]{generated_reply}[/white]")
+                            _log("Generated Reply:", args.verbose)
+                            _log(generated_reply, args.verbose)
                             
                             with Status("[white]Saving reply for review...[/white]", spinner="dots", console=console) as status:
-                                save_youtube_reply_for_review(
-                                    profile_name=profile_name,
-                                    video_url=video_url,
-                                    generated_reply=generated_reply,
-                                    scraped_comments=scraped_comments,
-                                    video_path=video_path
-                                )
+                                save_youtube_reply_for_review(profile_name=profile_name, video_url=video_url, generated_reply=generated_reply, scraped_comments=scraped_comments, video_path=video_path, verbose=args.verbose)
                             status.stop()
-                            console.print("[green]Reply saved for review.[/green]")
+                            _log("Reply saved for review.", args.verbose)
                         else:
-                            console.print(f"[bold red]Failed to generate reply: {generated_reply}[/bold red]")
+                            _log(f"Failed to generate reply: {generated_reply}", args.verbose, is_error=True)
                 else:
-                    console.print("[yellow]No comments scraped or no video URL found to generate replies for.[/yellow]")
+                    _log("No comments scraped or no video URL found to generate replies for.", args.verbose, is_error=True)
 
                 if i < args.number_of_shorts - 1:
                     if not move_to_next_short(driver, verbose=args.verbose):
-                        console.print("[yellow]Could not move to the next short. Ending process.[/yellow]")
+                        _log("Could not move to the next short. Ending process.", args.verbose, is_error=True)
                         break
                 else:
-                    console.print("[white]Finished processing all requested shorts.[/white]")
+                    _log("Finished processing all requested shorts.", args.verbose)
             
         except Exception as e:
-            console.print(f"[bold red]An unexpected error occurred: {e}[/bold red]")
+            _log(f"An unexpected error occurred: {e}", args.verbose, is_error=True)
         finally:
             if driver:
                 driver.quit()
-                console.print("[white]WebDriver closed.[/white]")
+                _log("WebDriver closed.", args.verbose)
 
     elif args.review:
         profile = args.profile
         if profile not in PROFILES:
-            console.print(f"[white]Profile '{profile}' not found in PROFILES. Available profiles: {', '.join(PROFILES.keys())}[/white]")
+            _log(f"Profile '{profile}' not found in PROFILES. Available profiles: {', '.join(PROFILES.keys())}", args.verbose, is_error=True)
             sys.exit(1)
         profile_name = PROFILES[profile]['name']
         port = args.port
-        start_youtube_review_server(profile_name, port=port)
+        start_youtube_review_server(profile_name, port=port, verbose=args.verbose)
 
     elif args.post_approved:
         profile = args.profile
         if profile not in PROFILES:
-            console.print(f"[white]Profile '{profile}' not found in PROFILES. Available profiles: {', '.join(PROFILES.keys())}[/white]")
+            _log(f"Profile '{profile}' not found in PROFILES. Available profiles: {', '.join(PROFILES.keys())}", args.verbose, is_error=True)
             sys.exit(1)
         profile_name = PROFILES[profile]['name']
 
@@ -201,7 +198,7 @@ def main():
 
             if not approved_replies:
                 status.update("[yellow]No approved replies found to post.[/yellow]")
-                console.print("[yellow]No approved replies found to post.[/yellow]")
+                _log("No approved replies found to post.", args.verbose)
                 return
             
             for i, reply in enumerate(approved_replies):
@@ -223,14 +220,14 @@ def main():
                     posted_count += 1
                 else:
                     failed_count += 1
-                    console.print(f"[bold red]Failed to post reply '{reply_id}' for video {video_url}.[/bold red]")
+                    _log(f"Failed to post reply '{reply_id}' for video {video_url}.", args.verbose, is_error=True)
             
             status.stop()
-            console.print(f"[green]YouTube Reply Posting Summary for {profile_name}:[/green]")
-            console.print(f"[white]  Total approved replies: {total_to_post}[/white]")
-            console.print(f"[white]  Successfully posted: {posted_count}[/white]")
-            console.print(f"[white]  Failed to post: {failed_count}[/white]")
-            console.print(f"[white]  Already posted (skipped): {already_posted_count}[/white]")
+            _log(f"YouTube Reply Posting Summary for {profile_name}:", args.verbose)
+            _log(f"Total approved replies: {total_to_post}", args.verbose)
+            _log(f"Successfully posted: {posted_count}", args.verbose)
+            _log(f"Failed to post: {failed_count}", args.verbose)
+            _log(f"Already posted (skipped): {already_posted_count}", args.verbose)
 
     elif args.clear:
         profile_name = args.profile
@@ -243,17 +240,14 @@ def main():
                 if os.path.isfile(file_path):
                     os.remove(file_path)
             os.rmdir(shorts_dir)
-            console.print(f"[green]Deleted shorts directory: {shorts_dir}[/green]")
+            _log(f"Deleted shorts directory: {shorts_dir}", args.verbose)
 
         review_json_path = os.path.join(profile_base_dir, "youtube_replies_for_review.json")
         if os.path.exists(review_json_path):
             os.remove(review_json_path)
-            console.print(f"[green]Deleted review JSON: {review_json_path}[/green]")
+            _log(f"Deleted review JSON: {review_json_path}", args.verbose)
 
-        console.print(f"[green]Cleared all generated files for profile '{profile_name}'.[/green]")
-
-    elif args.suggest_engaging_comments:
-        console.print("[white]Analyzing comments for engagement suggestions.[/white]")
+        _log(f"Cleared all generated files for profile '{profile_name}'.", args.verbose)
     else:
         parser.print_help()
 

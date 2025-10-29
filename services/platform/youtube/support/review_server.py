@@ -3,6 +3,7 @@ import re
 import json
 
 from datetime import datetime
+from tabnanny import verbose
 from rich.console import Console
 from urllib.parse import urlparse
 from typing import Optional, Dict, Any
@@ -13,11 +14,11 @@ from services.support.path_config import get_youtube_replies_for_review_dir, get
 console = Console()
 
 def _log(message: str, verbose: bool, status=None, is_error: bool = False, api_info: Optional[Dict[str, Any]] = None):
-    if status and (is_error or verbose):
-        status.stop()
-
-    log_message = message
     if is_error:
+        if status:
+            status.stop()
+        
+        log_message = message
         if not verbose:
             match = re.search(r'(\d{3}\s+.*?)(?:\.|\n|$)', message)
             if match:
@@ -39,22 +40,24 @@ def _log(message: str, verbose: bool, status=None, is_error: bool = False, api_i
         color = "bold red"
         console.print(f"[review_server.py] {timestamp}|[{color}]{log_message}{quota_str}[/{color}]")
     elif verbose:
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        color = "white"
-        console.print(f"[review_server.py] {timestamp}|[{color}]{message}[/{color}]")
         if status:
-            status.start()
+            status.update(message)
+        else:
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            color = "white"
+            console.print(f"[review_server.py] {timestamp}|[{color}]{message}[/{color}]")
     elif status:
         status.update(message)
 
 class YoutubeReviewRequestHandler(SimpleHTTPRequestHandler):
-    def __init__(self, *args, root_dir=None, **kwargs):
+    def __init__(self, *args, root_dir=None, profile_name='Default', verbose=False, **kwargs):
         self.root_dir = root_dir or os.getcwd()
-        self.profile_name = kwargs.pop('profile_name', 'Default')
+        self.profile_name = profile_name
+        self.verbose = verbose
         super().__init__(*args, **kwargs)
 
     def log_message(self, format, *args):
-        _log(f"HTTP {self.client_address[0]} - {format % args}", False)
+        _log(f"HTTP {self.client_address[0]} - {format % args}", self.verbose)
 
     def end_headers(self):
         self.send_header('Access-Control-Allow-Origin', '*')
@@ -193,10 +196,10 @@ class YoutubeReviewRequestHandler(SimpleHTTPRequestHandler):
                 f.seek(0)
                 json.dump(reply_data, f, ensure_ascii=False, indent=4)
                 f.truncate()
-            console.print(f"[green]Reply '{reply_id}' status updated to '{status}'.[/green]")
+            _log(f"Reply '{reply_id}' status updated to '{status}'.", True, verbose=self.verbose)
             return True
         else:
-            console.print(f"[bold red]Reply file not found for ID: {reply_id}[/bold red]")
+            _log(f"Reply file not found for ID: {reply_id}", True, is_error=True, verbose=self.verbose)
             return False
 
     def _handle_update(self, data):
@@ -233,7 +236,7 @@ class YoutubeReviewRequestHandler(SimpleHTTPRequestHandler):
         file_path = os.path.join(replies_path, f"{reply_id}.json")
         if os.path.exists(file_path):
             os.remove(file_path)
-            console.print(f"[green]Reply file '{reply_id}.json' deleted.[/green]")
+            _log(f"Reply file '{reply_id}.json' deleted.", True, verbose=self.verbose)
             return self._json_response({'ok': True})
         else:
             return self._json_response({'ok': False, 'error': 'not_found'}, status=404)
@@ -244,12 +247,16 @@ class YoutubeReviewRequestHandler(SimpleHTTPRequestHandler):
         replies_path = get_youtube_replies_for_review_dir(root_dir)
         if not os.path.exists(replies_path):
             return []
+        
+        _log(replies_path, verbose=verbose)
+        
         for filename in os.listdir(replies_path):
             if filename.endswith('.json'):
                 file_path = os.path.join(replies_path, filename)
                 with open(file_path, 'r', encoding='utf-8') as f:
                     reply_data = json.load(f)
                     replies.append(reply_data)
+        _log(f"[DEBUG] Loaded {len(replies)} replies from {replies_path}", True, verbose=True)
         return sorted(replies, key=lambda x: x.get('id', ''))
 
 def start_youtube_review_server(profile_name: str, port: int = 8767, verbose: bool = False):
@@ -265,7 +272,7 @@ def start_youtube_review_server(profile_name: str, port: int = 8767, verbose: bo
         f.write(generated_html)
     _log(f"Generated index.html to {target_html_path}", verbose)
 
-    handler_factory = lambda *args, **kwargs: YoutubeReviewRequestHandler(*args, root_dir=review_data_dir, profile_name=profile_name, **kwargs)
+    handler_factory = lambda *args, **kwargs: YoutubeReviewRequestHandler(*args, root_dir=review_data_dir, profile_name=profile_name, verbose=verbose, **kwargs)
     httpd = HTTPServer(('127.0.0.1', port), handler_factory)
     _log(f"Serving YouTube reply review for '{profile_name}' at http://127.0.0.1:{port}", verbose)
     _log("Press Ctrl+C to stop.", verbose)
