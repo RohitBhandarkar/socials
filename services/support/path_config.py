@@ -118,6 +118,14 @@ def get_community_output_file_path(profile_name: str, community_name: str, times
 def get_linkedin_output_dir(profile_name: str) -> str:
     return os.path.join(BASE_TMP_DIR, "linkedin", profile_name)
 
+def get_titles_output_dir(profile_name: str) -> str:
+    path = os.path.join(BASE_TMP_DIR, "ideas", profile_name, "titles")
+    return ensure_dir_exists(path)
+
+def get_scripts_output_dir(profile_name: str) -> str:
+    path = os.path.join(BASE_TMP_DIR, "ideas", profile_name, "scripts")
+    return ensure_dir_exists(path)
+
 def get_linkedin_html_dir(profile_name: str) -> str:
     return os.path.join(BASE_TMP_DIR, "linkedin", profile_name, "html")
 

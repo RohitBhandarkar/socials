@@ -47,10 +47,13 @@ def clean_reddit_data(profile_name: str, verbose: bool = False, status: Optional
     cleaned_posts = []
 
     for post in reddit_data:
+        if post.get("score", 0) < 5:
+            continue
+
         original_comments_count = len(post.get("comments", []))
         cleaned_comments = [
             comment for comment in post.get("comments", [])
-            if not (comment.get("score") == 1 and comment.get("replies_count") == 0)
+            if not (comment.get("score", 0) < 5)
         ]
         removed_comments_in_post = original_comments_count - len(cleaned_comments)
         total_removed_comments += removed_comments_in_post
@@ -63,7 +66,8 @@ def clean_reddit_data(profile_name: str, verbose: bool = False, status: Optional
     
     removed_posts_count = original_post_count - len(cleaned_posts)
 
-    _log(f"Cleaned {total_removed_comments} comments from {original_post_count} posts.", verbose, status=status)
+    _log(f"Removed {removed_posts_count} posts with score < 5.", verbose, status=status)
+    _log(f"Cleaned {total_removed_comments} comments from {len(cleaned_posts)} remaining posts.", verbose, status=status)
 
     if total_removed_comments > 0 or removed_posts_count > 0:
         _log(f"Updating latest Reddit data file: {latest_file}", verbose, status=status)

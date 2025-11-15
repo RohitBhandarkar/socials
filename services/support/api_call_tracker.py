@@ -36,6 +36,8 @@ class APICallTracker:
                 "subreddit_rising": {"rpm": 60, "tpm": -1, "rpd": 1000},
                 "subreddit_week": {"rpm": 60, "tpm": -1, "rpd": 1000},
                 "subreddit_day": {"rpm": 60, "tpm": -1, "rpd": 1000},
+                "subreddit_yesterday": {"rpm": 60, "tpm": -1, "rpd": 1000},
+                "subreddit_top_day": {"rpm": 60, "tpm": -1, "rpd": 1000},
                 "post_comments": {"rpm": 60, "tpm": -1, "rpd": 1000},
             },
             "google_search": {

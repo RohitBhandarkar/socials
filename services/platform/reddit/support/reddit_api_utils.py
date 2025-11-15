@@ -3,9 +3,9 @@ import os
 import time
 import praw
 
-from datetime import datetime
 from dotenv import load_dotenv
 from rich.console import Console
+from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional
 
 from services.support.rate_limiter import RateLimiter
@@ -135,6 +135,24 @@ def get_subreddit_posts(profile_name: str, reddit_instance: praw.Reddit, subredd
             posts = subreddit.top(time_filter="week", limit=limit)
         elif time_filter == "day":
             posts = subreddit.top(time_filter="day", limit=limit)
+        elif time_filter == "yesterday":
+            method_name = "subreddit_top_day"
+            _handle_rate_limit(profile_name, method_name, status, verbose)
+
+            today = datetime.now()
+            yesterday = today - timedelta(days=1)
+            yesterday_start = datetime(yesterday.year, yesterday.month, yesterday.day, 0, 0, 0)
+            yesterday_end = datetime(yesterday.year, yesterday.month, yesterday.day, 23, 59, 59)
+
+            _log(f"Fetching 'day' posts for custom 'yesterday' filter from r/{subreddit_name}...", verbose, status=status)
+            all_day_posts = subreddit.top(time_filter="day", limit=limit)
+            filtered_posts = []
+            for post in all_day_posts:
+                post_utc_dt = datetime.fromtimestamp(post.created_utc)
+                if yesterday_start <= post_utc_dt <= yesterday_end:
+                    filtered_posts.append(post)
+            posts = filtered_posts
+            _log(f"Filtered {len(posts)} posts for 'yesterday' from r/{subreddit_name}.", verbose, status=status)
         else:
             _log(f"Unsupported time filter: {time_filter}", verbose, is_error=True, status=status)
             return []
